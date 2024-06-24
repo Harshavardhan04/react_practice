@@ -1,0 +1,187 @@
+
+import React, { useEffect, useRef, useState } from 'react';
+import * as d3 from 'd3';
+
+const LCHNotionalGraph = () => {
+  const svgRef = useRef();
+  const [colorScheme, setColorScheme] = useState('schemeCategory10');
+
+  const mockData = generateContinuousData('2023-01-01', 30); // 30 days of data
+
+  useEffect(() => {
+    const svg = d3.select(svgRef.current);
+    svg.selectAll('*').remove(); // Clear previous chart
+
+    const margin = { top: 20, right: 30, bottom: 40, left: 50 },
+          width = 800 - margin.left - margin.right,
+          height = 400 - margin.top - margin.bottom;
+
+    const parseDate = d3.timeParse("%Y-%m-%d");
+
+    mockData.forEach(d => {
+      d.Date = parseDate(d.Date);
+      d.Target = +d.Target;
+      d.AUD = +d.AUD;
+      d.EUR = +d.EUR;
+      d.GBP = +d.GBP;
+      d.JPY = +d.JPY;
+      d.USD = +d.USD;
+      d.Total = +d.Total;
+    });
+
+    const x = d3.scaleTime()
+                .domain(d3.extent(mockData, d => d.Date))
+                .range([0, width]);
+
+    const y = d3.scaleLinear()
+                .domain([0, d3.max(mockData, d => Math.max(d.Target, d.AUD, d.EUR, d.GBP, d.JPY, d.USD))])
+                .range([height, 0]);
+
+    const line = d3.line()
+                   .x(d => x(d.Date))
+                   .y(d => y(d.value))
+                   .curve(d3.curveMonotoneX);
+
+    const g = svg.append("g")
+                 .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    // Define clip path
+    svg.append("defs").append("clipPath")
+       .attr("id", "clip")
+       .append("rect")
+       .attr("width", width)
+       .attr("height", height);
+
+    g.append("g")
+     .attr("class", "x-axis")
+     .attr("transform", `translate(0,${height})`)
+     .call(d3.axisBottom(x));
+
+    g.append("g")
+     .attr("class", "y-axis")
+     .call(d3.axisLeft(y));
+
+    const currencies = ["Target", "AUD", "EUR", "GBP", "JPY", "USD"];
+    const colors = d3.scaleOrdinal(d3[colorScheme]).domain(currencies);
+
+    const currencyData = currencies.map(currency => ({
+      currency,
+      values: mockData.map(d => ({ Date: d.Date, value: d[currency] }))
+    }));
+
+    const path = g.selectAll(".line")
+                  .data(currencyData)
+                  .enter().append("path")
+                  .attr("class", "line")
+                  .attr("fill", "none")
+                  .attr("stroke", d => colors(d.currency))
+                  .attr("stroke-width", 1.5)
+                  .attr("d", d => line(d.values))
+                  .attr("clip-path", "url(#clip)");
+
+    const dots = g.selectAll(".dot")
+                  .data(currencyData.flatMap(d => d.values))
+                  .enter().append("circle")
+                  .attr("class", "dot")
+                  .attr("cx", d => x(d.Date))
+                  .attr("cy", d => y(d.value))
+                  .attr("r", 3)
+                  .attr("fill", d => colors(d.currency))
+                  .attr("clip-path", "url(#clip)")
+                  .on("mouseover", (event, d) => {
+                    tooltip.transition().duration(200).style("opacity", 0.9);
+                    tooltip.html(`Date: ${d3.timeFormat("%Y-%m-%d")(d.Date)}<br/>Value: ${d.value.toFixed(2)}`)
+                           .style("left", (event.pageX + 5) + "px")
+                           .style("top", (event.pageY - 28) + "px");
+                  })
+                  .on("mouseout", () => {
+                    tooltip.transition().duration(500).style("opacity", 0);
+                  });
+
+    const tooltip = d3.select("body").append("div")
+                      .attr("class", "tooltip")
+                      .style("position", "absolute")
+                      .style("background", "lightsteelblue")
+                      .style("padding", "5px 10px")
+                      .style("border-radius", "5px")
+                      .style("pointer-events", "none")
+                      .style("opacity", 0);
+
+    // Adding a legend
+    const legend = svg.append("g")
+                      .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    legend.selectAll("rect")
+          .data(currencies)
+          .enter().append("rect")
+          .attr("x", width + 10)
+          .attr("y", (d, i) => i * 20)
+          .attr("width", 10)
+          .attr("height", 10)
+          .attr("fill", d => colors(d));
+
+    legend.selectAll("text")
+          .data(currencies)
+          .enter().append("text")
+          .attr("x", width + 25)
+          .attr("y", (d, i) => i * 20 + 9)
+          .text(d => d);
+
+    const zoom = d3.zoom()
+                   .scaleExtent([1, 10])
+                   .translateExtent([[0, 0], [width, height]])
+                   .extent([[0, 0], [width, height]])
+                   .on("zoom", (event) => {
+                     const newX = event.transform.rescaleX(x);
+                     const newY = event.transform.rescaleY(y);
+
+                     g.select(".x-axis").call(d3.axisBottom(newX));
+                     g.select(".y-axis").call(d3.axisLeft(newY));
+
+                     path.attr("d", d => line.x(p => newX(p.Date)).y(p => newY(p.value))(d.values));
+                     dots.attr("cx", d => newX(d.Date))
+                         .attr("cy", d => newY(d.value));
+                   });
+
+    svg.call(zoom);
+
+  }, [colorScheme]);
+
+  const toggleColorScheme = () => {
+    setColorScheme(prevScheme => prevScheme === 'schemeCategory10' ? 'schemeAccent' : 'schemeCategory10');
+  };
+
+  return (
+    <div>
+      <h1>LCH Notional Graph</h1>
+      <button onClick={toggleColorScheme}>Toggle Color Scheme</button>
+      <svg ref={svgRef} width="800" height="400"></svg>
+    </div>
+  );
+};
+
+const generateContinuousData = (startDate, numDays) => {
+  const continuousData = [];
+  const parseDate = d3.timeParse("%Y-%m-%d");
+  const formatDate = d3.timeFormat("%Y-%m-%d");
+
+  for (let i = 0; i < numDays; i++) {
+    const date = new Date(startDate);
+    date.setDate(date.getDate() + i);
+
+    continuousData.push({
+      Date: formatDate(date),
+      Target: Math.random() * 150 + 50,
+      AUD: Math.random() * 100,
+      EUR: Math.random() * 100,
+      GBP: Math.random() * 100,
+      JPY: Math.random() * 100,
+      USD: Math.random() * 100,
+      Total: Math.random() * 500 + 200
+    });
+  }
+
+  return continuousData;
+};
+
+export default LCHNotionalGraph;
