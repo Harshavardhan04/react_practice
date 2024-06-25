@@ -185,3 +185,586 @@ const generateContinuousData = (startDate, numDays) => {
 };
 
 export default LCHNotionalGraph;
+
+
+
+
+
+import React, { useEffect, useRef, useState } from 'react';
+import * as d3 from 'd3';
+
+const LCHNotionalGraph = () => {
+  const svgRef = useRef();
+  const [colorScheme, setColorScheme] = useState('schemeCategory10');
+  const [showSpikeLines, setShowSpikeLines] = useState(false);
+  const [compareDataOnHover, setCompareDataOnHover] = useState(false);
+
+  const mockData = generateContinuousData('2023-01-01', 30); // 30 days of data
+
+  useEffect(() => {
+    drawChart();
+  }, [colorScheme, showSpikeLines, compareDataOnHover]);
+
+  const drawChart = () => {
+    const svg = d3.select(svgRef.current);
+    svg.selectAll('*').remove(); // Clear previous chart
+
+    const margin = { top: 20, right: 30, bottom: 40, left: 50 },
+          width = 800 - margin.left - margin.right,
+          height = 400 - margin.top - margin.bottom;
+
+    const parseDate = d3.timeParse("%Y-%m-%d %H:%M");
+
+    mockData.forEach(d => {
+      d.Date = parseDate(d.Date);
+      d.Target = +d.Target;
+      d.AUD = +d.AUD;
+      d.EUR = +d.EUR;
+      d.GBP = +d.GBP;
+      d.JPY = +d.JPY;
+      d.USD = +d.USD;
+      d.Total = +d.Total;
+    });
+
+    const x = d3.scaleTime()
+                .domain(d3.extent(mockData, d => d.Date))
+                .range([0, width]);
+
+    const y = d3.scaleLinear()
+                .domain([0, d3.max(mockData, d => Math.max(d.Target, d.AUD, d.EUR, d.GBP, d.JPY, d.USD))])
+                .range([height, 0]);
+
+    const line = d3.line()
+                   .x(d => x(d.Date))
+                   .y(d => y(d.value))
+                   .curve(d3.curveMonotoneX);
+
+    const g = svg.append("g")
+                 .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    // Define clip path
+    svg.append("defs").append("clipPath")
+       .attr("id", "clip")
+       .append("rect")
+       .attr("width", width)
+       .attr("height", height);
+
+    g.append("g")
+     .attr("class", "x-axis")
+     .attr("transform", `translate(0,${height})`)
+     .call(d3.axisBottom(x));
+
+    g.append("g")
+     .attr("class", "y-axis")
+     .call(d3.axisLeft(y));
+
+    const currencies = ["Target", "AUD", "EUR", "GBP", "JPY", "USD"];
+    const colors = d3.scaleOrdinal(d3[colorScheme]).domain(currencies);
+
+    const currencyData = currencies.map(currency => ({
+      currency,
+      values: interpolateData(mockData.map(d => ({ Date: d.Date, value: d[currency] })), x)
+    }));
+
+    const path = g.selectAll(".line")
+                  .data(currencyData)
+                  .enter().append("path")
+                  .attr("class", "line")
+                  .attr("fill", "none")
+                  .attr("stroke", d => colors(d.currency))
+                  .attr("stroke-width", 1.5)
+                  .attr("d", d => line(d.values))
+                  .attr("clip-path", "url(#clip)");
+
+    const dots = g.selectAll(".dot")
+                  .data(currencyData.flatMap(d => d.values))
+                  .enter().append("circle")
+                  .attr("class", "dot")
+                  .attr("cx", d => x(d.Date))
+                  .attr("cy", d => y(d.value))
+                  .attr("r", 3)
+                  .attr("fill", d => colors(d.currency))
+                  .attr("clip-path", "url(#clip)")
+                  .on("mouseover", (event, d) => {
+                    tooltip.transition().duration(200).style("opacity", 0.9);
+                    tooltip.html(`Date: ${d3.timeFormat("%Y-%m-%d %H:%M")(d.Date)}<br/>Value: ${d.value.toFixed(2)}`)
+                           .style("left", (event.pageX + 5) + "px")
+                           .style("top", (event.pageY - 28) + "px");
+
+                    if (showSpikeLines) {
+                      spikeLineX.attr("x1", x(d.Date)).attr("x2", x(d.Date))
+                                .attr("y1", 0).attr("y2", height)
+                                .style("display", "block");
+                      spikeLineY.attr("x1", 0).attr("x2", width)
+                                .attr("y1", y(d.value)).attr("y2", y(d.value))
+                                .style("display", "block");
+                    }
+
+                    if (compareDataOnHover) {
+                      const hoverData = currencyData.map(currency => {
+                        const hoverValue = currency.values.find(v => v.Date.getTime() === d.Date.getTime());
+                        return { currency: currency.currency, value: hoverValue.value };
+                      });
+                      compareTooltip.html(`Date: ${d3.timeFormat("%Y-%m-%d %H:%M")(d.Date)}<br/>` +
+                                          hoverData.map(hd => `${hd.currency}: ${hd.value.toFixed(2)}`).join('<br/>'))
+                                    .style("left", (event.pageX + 10) + "px")
+                                    .style("top", (event.pageY - 28) + "px")
+                                    .style("display", "block");
+                    }
+                  })
+                  .on("mouseout", () => {
+                    tooltip.transition().duration(500).style("opacity", 0);
+                    spikeLineX.style("display", "none");
+                    spikeLineY.style("display", "none");
+                    compareTooltip.style("display", "none");
+                  });
+
+    const tooltip = d3.select("body").append("div")
+                      .attr("class", "tooltip")
+                      .style("position", "absolute")
+                      .style("background", "lightsteelblue")
+                      .style("padding", "5px 10px")
+                      .style("border-radius", "5px")
+                      .style("pointer-events", "none")
+                      .style("opacity", 0);
+
+    const compareTooltip = d3.select("body").append("div")
+                             .attr("class", "compare-tooltip")
+                             .style("position", "absolute")
+                             .style("background", "white")
+                             .style("padding", "5px 10px")
+                             .style("border-radius", "5px")
+                             .style("pointer-events", "none")
+                             .style("border", "1px solid #ccc")
+                             .style("display", "none");
+
+    const spikeLineX = g.append("line")
+                        .attr("class", "spike-line-x")
+                        .attr("stroke", "black")
+                        .attr("stroke-dasharray", "3,3")
+                        .style("display", "none");
+
+    const spikeLineY = g.append("line")
+                        .attr("class", "spike-line-y")
+                        .attr("stroke", "black")
+                        .attr("stroke-dasharray", "3,3")
+                        .style("display", "none");
+
+    // Adding a legend
+    const legend = svg.append("g")
+                      .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    legend.selectAll("rect")
+          .data(currencies)
+          .enter().append("rect")
+          .attr("x", width + 10)
+          .attr("y", (d, i) => i * 20)
+          .attr("width", 10)
+          .attr("height", 10)
+          .attr("fill", d => colors(d));
+
+    legend.selectAll("text")
+          .data(currencies)
+          .enter().append("text")
+          .attr("x", width + 25)
+          .attr("y", (d, i) => i * 20 + 9)
+          .text(d => d);
+
+    const zoom = d3.zoom()
+                   .scaleExtent([1, 10])
+                   .translateExtent([[0, 0], [width, height]])
+                   .extent([[0, 0], [width, height]])
+                   .on("zoom", (event) => {
+                     const newX = event.transform.rescaleX(x);
+                     const newY = event.transform.rescaleY(y);
+
+                     g.select(".x-axis").call(d3.axisBottom(newX));
+                     g.select(".y-axis").call(d3.axisLeft(newY));
+
+                     path.attr("d", d => line.x(p => newX(p.Date)).y(p => newY(p.value))(d.values));
+                     dots.attr("cx", d => newX(d.Date))
+                         .attr("cy", d => newY(d.value));
+                   });
+
+    svg.call(zoom);
+  };
+
+//   const toggleColorScheme = () => {
+//     setColorScheme(prevScheme => prevScheme === 'schemeCategory10' ? 'schemeAccent' : 'schemeCategory10');
+//   };
+
+  const resetZoom = () => {
+    d3.select(svgRef.current).transition().duration(750).call(d3.zoom().transform, d3.zoomIdentity);
+    drawChart(); // Redraw the chart after resetting zoom
+  };
+
+  const toggleSpikeLines = () => {
+    setShowSpikeLines(!showSpikeLines);
+  };
+
+  const toggleCompareDataOnHover = () => {
+    setCompareDataOnHover(!compareDataOnHover);
+  };
+
+  return (
+    <div>
+      <h1>LCH Notional Graph</h1>
+      {/* <button onClick={toggleColorScheme}>Toggle Color Scheme</button> */}
+      <button onClick={resetZoom}>Reset Zoom</button>
+      <button onClick={toggleSpikeLines}>{showSpikeLines ? 'Hide Spike Lines' : 'Show Spike Lines'}</button>
+      <button onClick={toggleCompareDataOnHover}>{compareDataOnHover ? 'Disable Compare Data on Hover' : 'Enable Compare Data on Hover'}</button>
+      <svg ref={svgRef} width="800" height="400"></svg>
+    </div>
+  );
+};
+
+const generateContinuousData = (startDate, numDays) => {
+  const continuousData = [];
+  const parseDate = d3.timeParse("%Y-%m-%d %H:%M");
+  const formatDate = d3.timeFormat("%Y-%m-%d %H:%M");
+
+  let previousValues = {
+    Target: Math.random() * 150 + 50,
+    AUD: Math.random() * 100,
+    EUR: Math.random() * 100,
+    GBP: Math.random() * 100,
+    JPY: Math.random() * 100,
+    USD: Math.random() * 100,
+    Total: Math.random() * 500 + 200
+  };
+
+  for (let i = 0; i < numDays * 24; i++) { // Generating hourly data
+    const date = new Date(startDate);
+    date.setHours(date.getHours() + i);
+
+    previousValues = {
+      Target: previousValues.Target + (Math.random() * 20 - 10),
+      AUD: previousValues.AUD + (Math.random() * 10 - 5),
+      EUR: previousValues.EUR + (Math.random() * 10 - 5),
+      GBP: previousValues.GBP + (Math.random() * 10 - 5),
+      JPY: previousValues.JPY + (Math.random() * 10 - 5),
+      USD: previousValues.USD + (Math.random() * 10 - 5),
+      Total: previousValues.Total + (Math.random() * 50 - 25)
+    };
+
+    continuousData.push({
+      Date: formatDate(date),
+      Target: previousValues.Target,
+      AUD: previousValues.AUD,
+      EUR: previousValues.EUR,
+      GBP: previousValues.GBP,
+      JPY: previousValues.JPY,
+      USD: previousValues.USD,
+      Total: previousValues.Total
+    });
+  }
+
+  return continuousData;
+};
+
+const interpolateData = (data, xScale) => {
+  const interpolatedData = [];
+  const xDomain = xScale.domain();
+  const step = (xDomain[1] - xDomain[0]) / 800; // Assuming 800 pixels for the width
+
+  for (let date = xDomain[0]; date <= xDomain[1]; date = new Date(date.getTime() + step)) {
+    const prev = data.find(d => d.Date <= date);
+    const next = data.find(d => d.Date > date);
+
+    if (prev && next) {
+      const interpolatedValue = prev.value + (next.value - prev.value) * ((date - prev.Date) / (next.Date - prev.Date));
+      interpolatedData.push({ Date: date, value: interpolatedValue });
+    } else if (prev) {
+      interpolatedData.push({ Date: date, value: prev.value });
+    }
+  }
+
+  return interpolatedData;
+};
+
+export default LCHNotionalGraph;
+
+
+
+
+
+
+import React, { useEffect, useRef, useState } from 'react';
+import * as d3 from 'd3';
+
+const LCHNotionalGraph = () => {
+  const svgRef = useRef();
+  const [showSpikeLines, setShowSpikeLines] = useState(false);
+  const [compareDataOnHover, setCompareDataOnHover] = useState(false);
+  const [selectZoom, setSelectZoom] = useState(false);
+
+  const mockData = generateContinuousData('2023-01-01', 30); // 30 days of data
+
+  useEffect(() => {
+    drawChart();
+  }, [showSpikeLines, compareDataOnHover, selectZoom]);
+
+  const drawChart = () => {
+    const svg = d3.select(svgRef.current);
+    svg.selectAll('*').remove(); // Clear previous chart
+
+    const margin = { top: 20, right: 30, bottom: 40, left: 50 },
+          width = 800 - margin.left - margin.right,
+          height = 400 - margin.top - margin.bottom;
+
+    const parseDate = d3.timeParse("%Y-%m-%d %H:%M");
+
+    mockData.forEach(d => {
+      d.Date = parseDate(d.Date);
+      d.Target = +d.Target;
+      d.AUD = +d.AUD;
+      d.EUR = +d.EUR;
+      d.GBP = +d.GBP;
+      d.JPY = +d.JPY;
+      d.USD = +d.USD;
+      d.Total = +d.Total;
+    });
+
+    const x = d3.scaleTime()
+                .domain(d3.extent(mockData, d => d.Date))
+                .range([0, width]);
+
+    const y = d3.scaleLinear()
+                .domain([0, d3.max(mockData, d => Math.max(d.Target, d.AUD, d.EUR, d.GBP, d.JPY, d.USD))])
+                .range([height, 0]);
+
+    const line = d3.line()
+                   .x(d => x(d.Date))
+                   .y(d => y(d.value))
+                   .curve(d3.curveMonotoneX);
+
+    const g = svg.append("g")
+                 .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    g.append("g")
+     .attr("class", "x-axis")
+     .attr("transform", `translate(0,${height})`)
+     .call(d3.axisBottom(x));
+
+    g.append("g")
+     .attr("class", "y-axis")
+     .call(d3.axisLeft(y));
+
+    const currencies = ["Target", "AUD", "EUR", "GBP", "JPY", "USD"];
+    const colors = d3.scaleOrdinal(d3.schemeCategory10).domain(currencies);
+
+    const currencyData = currencies.map(currency => ({
+      currency,
+      values: mockData.map(d => ({ Date: d.Date, value: d[currency] }))
+    }));
+
+    const path = g.selectAll(".line")
+                  .data(currencyData)
+                  .enter().append("path")
+                  .attr("class", "line")
+                  .attr("fill", "none")
+                  .attr("stroke", d => colors(d.currency))
+                  .attr("stroke-width", 1.5)
+                  .attr("d", d => line(d.values));
+
+    const dots = g.selectAll(".dot")
+                  .data(currencyData.flatMap(d => d.values))
+                  .enter().append("circle")
+                  .attr("class", "dot")
+                  .attr("cx", d => x(d.Date))
+                  .attr("cy", d => y(d.value))
+                  .attr("r", 3)
+                  .attr("fill", d => colors(d.currency))
+                  .on("mouseover", (event, d) => {
+                    tooltip.transition().duration(200).style("opacity", 0.9);
+                    tooltip.html(`Date: ${d3.timeFormat("%Y-%m-%d %H:%M")(d.Date)}<br/>Value: ${d.value.toFixed(2)}`)
+                           .style("left", (event.pageX + 5) + "px")
+                           .style("top", (event.pageY - 28) + "px");
+
+                    if (showSpikeLines) {
+                      spikeLineX.attr("x1", x(d.Date)).attr("x2", x(d.Date))
+                                .attr("y1", 0).attr("y2", height)
+                                .style("display", "block");
+                      spikeLineY.attr("x1", 0).attr("x2", width)
+                                .attr("y1", y(d.value)).attr("y2", y(d.value))
+                                .style("display", "block");
+                    }
+
+                    if (compareDataOnHover) {
+                      const hoverData = currencyData.map(currency => {
+                        const hoverValue = currency.values.find(v => v.Date.getTime() === d.Date.getTime());
+                        return { currency: currency.currency, value: hoverValue.value };
+                      });
+                      compareTooltip.html(`Date: ${d3.timeFormat("%Y-%m-%d %H:%M")(d.Date)}<br/>` +
+                                          hoverData.map(hd => `${hd.currency}: ${hd.value.toFixed(2)}`).join('<br/>'))
+                                    .style("left", (event.pageX + 10) + "px")
+                                    .style("top", (event.pageY - 28) + "px")
+                                    .style("display", "block");
+                    }
+                  })
+                  .on("mouseout", () => {
+                    tooltip.transition().duration(500).style("opacity", 0);
+                    spikeLineX.style("display", "none");
+                    spikeLineY.style("display", "none");
+                    compareTooltip.style("display", "none");
+                  });
+
+    const tooltip = d3.select("body").append("div")
+                      .attr("class", "tooltip")
+                      .style("position", "absolute")
+                      .style("background", "lightsteelblue")
+                      .style("padding", "5px 10px")
+                      .style("border-radius", "5px")
+                      .style("pointer-events", "none")
+                      .style("opacity", 0);
+
+    const compareTooltip = d3.select("body").append("div")
+                             .attr("class", "compare-tooltip")
+                             .style("position", "absolute")
+                             .style("background", "white")
+                             .style("padding", "5px 10px")
+                             .style("border-radius", "5px")
+                             .style("pointer-events", "none")
+                             .style("border", "1px solid #ccc")
+                             .style("display", "none");
+
+    const spikeLineX = g.append("line")
+                        .attr("class", "spike-line-x")
+                        .attr("stroke", "black")
+                        .attr("stroke-dasharray", "3,3")
+                        .style("display", "none");
+
+    const spikeLineY = g.append("line")
+                        .attr("class", "spike-line-y")
+                        .attr("stroke", "black")
+                        .attr("stroke-dasharray", "3,3")
+                        .style("display", "none");
+
+    // Adding a legend
+    const legend = svg.append("g")
+                      .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    legend.selectAll("rect")
+          .data(currencies)
+          .enter().append("rect")
+          .attr("x", width + 10)
+          .attr("y", (d, i) => i * 20)
+          .attr("width", 10)
+          .attr("height", 10)
+          .attr("fill", d => colors(d));
+
+    legend.selectAll("text")
+          .data(currencies)
+          .enter().append("text")
+          .attr("x", width + 25)
+          .attr("y", (d, i) => i * 20 + 9)
+          .text(d => d);
+
+    const zoom = d3.zoom()
+                   .scaleExtent([1, 10])
+                   .translateExtent([[0, 0], [width, height]])
+                   .extent([[0, 0], [width, height]])
+                   .on("zoom", (event) => {
+                     const newX = event.transform.rescaleX(x);
+                     const newY = event.transform.rescaleY(y);
+
+                     g.select(".x-axis").call(d3.axisBottom(newX));
+                     g.select(".y-axis").call(d3.axisLeft(newY));
+
+                     path.attr("d", d => line.x(p => newX(p.Date)).y(p => newY(p.value))(d.values));
+                     dots.attr("cx", d => newX(d.Date))
+                         .attr("cy", d => newY(d.value));
+                   });
+
+    svg.call(zoom);
+
+    if (selectZoom) {
+      const brush = d3.brush()
+                      .extent([[0, 0], [width, height]])
+                      .on("end", ({ selection }) => {
+                        if (selection) {
+                          const [[x0, y0], [x1, y1]] = selection;
+                          const newX = x.domain([x.invert(x0), x.invert(x1)]);
+                          const newY = y.domain([y.invert(y1), y.invert(y0)]);
+                          svg.transition().call(zoom.transform, d3.zoomIdentity.scale(width / (x1 - x0)).translate(-x0, -y0));
+                        }
+                      });
+      svg.append("g").call(brush);
+    }
+  };
+
+  const resetZoom = () => {
+    const svg = d3.select(svgRef.current);
+    svg.transition().duration(750).call(d3.zoom().transform, d3.zoomIdentity)
+      .on("end", drawChart); // Ensure the chart is redrawn after resetting zoom
+  };
+
+  const toggleSpikeLines = () => {
+    setShowSpikeLines(!showSpikeLines);
+  };
+
+  const toggleCompareDataOnHover = () => {
+    setCompareDataOnHover(!compareDataOnHover);
+  };
+
+  const toggleSelectZoom = () => {
+    setSelectZoom(!selectZoom);
+  };
+
+  return (
+    <div>
+      <h1>LCH Notional Graph</h1>
+      <button onClick={resetZoom}>Reset Zoom</button>
+      <button onClick={toggleSpikeLines}>{showSpikeLines ? 'Hide Spike Lines' : 'Show Spike Lines'}</button>
+      <button onClick={toggleCompareDataOnHover}>{compareDataOnHover ? 'Disable Compare Data on Hover' : 'Enable Compare Data on Hover'}</button>
+      <button onClick={toggleSelectZoom}>{selectZoom ? 'Disable Select Zoom' : 'Enable Select Zoom'}</button>
+      <svg ref={svgRef} width="800" height="400"></svg>
+    </div>
+  );
+};
+
+const generateContinuousData = (startDate, numDays) => {
+  const continuousData = [];
+  const parseDate = d3.timeParse("%Y-%m-%d %H:%M");
+  const formatDate = d3.timeFormat("%Y-%m-%d %H:%M");
+
+  let previousValues = {
+    Target: Math.random() * 150 + 50,
+    AUD: Math.random() * 100,
+    EUR: Math.random() * 100,
+    GBP: Math.random() * 100,
+    JPY: Math.random() * 100,
+    USD: Math.random() * 100,
+    Total: Math.random() * 500 + 200
+  };
+
+  for (let i = 0; i < numDays * 24; i++) { // Generating hourly data
+    const date = new Date(startDate);
+    date.setHours(date.getHours() + i);
+
+    previousValues = {
+      Target: previousValues.Target + (Math.random() * 2 - 1), // Reduced range for smoother lines
+      AUD: previousValues.AUD + (Math.random() * 2 - 1),       // Reduced range for smoother lines
+      EUR: previousValues.EUR + (Math.random() * 2 - 1),       // Reduced range for smoother lines
+      GBP: previousValues.GBP + (Math.random() * 2 - 1),       // Reduced range for smoother lines
+      JPY: previousValues.JPY + (Math.random() * 2 - 1),       // Reduced range for smoother lines
+      USD: previousValues.USD + (Math.random() * 2 - 1),       // Reduced range for smoother lines
+      Total: previousValues.Total + (Math.random() * 10 - 5)   // Reduced range for smoother lines
+    };
+
+    continuousData.push({
+      Date: formatDate(date),
+      Target: previousValues.Target,
+      AUD: previousValues.AUD,
+      EUR: previousValues.EUR,
+      GBP: previousValues.GBP,
+      JPY: previousValues.JPY,
+      USD: previousValues.USD,
+      Total: previousValues.Total
+    });
+  }
+
+  return continuousData;
+};
+
+export default LCHNotionalGraph;
