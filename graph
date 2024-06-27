@@ -1,770 +1,2226 @@
-
-import React, { useEffect, useRef, useState } from 'react';
-import * as d3 from 'd3';
-
-const LCHNotionalGraph = () => {
-  const svgRef = useRef();
-  const [colorScheme, setColorScheme] = useState('schemeCategory10');
-
-  const mockData = generateContinuousData('2023-01-01', 30); // 30 days of data
-
-  useEffect(() => {
-    const svg = d3.select(svgRef.current);
-    svg.selectAll('*').remove(); // Clear previous chart
-
-    const margin = { top: 20, right: 30, bottom: 40, left: 50 },
-          width = 800 - margin.left - margin.right,
-          height = 400 - margin.top - margin.bottom;
-
-    const parseDate = d3.timeParse("%Y-%m-%d");
-
-    mockData.forEach(d => {
-      d.Date = parseDate(d.Date);
-      d.Target = +d.Target;
-      d.AUD = +d.AUD;
-      d.EUR = +d.EUR;
-      d.GBP = +d.GBP;
-      d.JPY = +d.JPY;
-      d.USD = +d.USD;
-      d.Total = +d.Total;
-    });
-
-    const x = d3.scaleTime()
-                .domain(d3.extent(mockData, d => d.Date))
-                .range([0, width]);
-
-    const y = d3.scaleLinear()
-                .domain([0, d3.max(mockData, d => Math.max(d.Target, d.AUD, d.EUR, d.GBP, d.JPY, d.USD))])
-                .range([height, 0]);
-
-    const line = d3.line()
-                   .x(d => x(d.Date))
-                   .y(d => y(d.value))
-                   .curve(d3.curveMonotoneX);
-
-    const g = svg.append("g")
-                 .attr("transform", `translate(${margin.left},${margin.top})`);
-
-    // Define clip path
-    svg.append("defs").append("clipPath")
-       .attr("id", "clip")
-       .append("rect")
-       .attr("width", width)
-       .attr("height", height);
-
-    g.append("g")
-     .attr("class", "x-axis")
-     .attr("transform", `translate(0,${height})`)
-     .call(d3.axisBottom(x));
-
-    g.append("g")
-     .attr("class", "y-axis")
-     .call(d3.axisLeft(y));
-
-    const currencies = ["Target", "AUD", "EUR", "GBP", "JPY", "USD"];
-    const colors = d3.scaleOrdinal(d3[colorScheme]).domain(currencies);
-
-    const currencyData = currencies.map(currency => ({
-      currency,
-      values: mockData.map(d => ({ Date: d.Date, value: d[currency] }))
-    }));
-
-    const path = g.selectAll(".line")
-                  .data(currencyData)
-                  .enter().append("path")
-                  .attr("class", "line")
-                  .attr("fill", "none")
-                  .attr("stroke", d => colors(d.currency))
-                  .attr("stroke-width", 1.5)
-                  .attr("d", d => line(d.values))
-                  .attr("clip-path", "url(#clip)");
-
-    const dots = g.selectAll(".dot")
-                  .data(currencyData.flatMap(d => d.values))
-                  .enter().append("circle")
-                  .attr("class", "dot")
-                  .attr("cx", d => x(d.Date))
-                  .attr("cy", d => y(d.value))
-                  .attr("r", 3)
-                  .attr("fill", d => colors(d.currency))
-                  .attr("clip-path", "url(#clip)")
-                  .on("mouseover", (event, d) => {
-                    tooltip.transition().duration(200).style("opacity", 0.9);
-                    tooltip.html(`Date: ${d3.timeFormat("%Y-%m-%d")(d.Date)}<br/>Value: ${d.value.toFixed(2)}`)
-                           .style("left", (event.pageX + 5) + "px")
-                           .style("top", (event.pageY - 28) + "px");
-                  })
-                  .on("mouseout", () => {
-                    tooltip.transition().duration(500).style("opacity", 0);
-                  });
-
-    const tooltip = d3.select("body").append("div")
-                      .attr("class", "tooltip")
-                      .style("position", "absolute")
-                      .style("background", "lightsteelblue")
-                      .style("padding", "5px 10px")
-                      .style("border-radius", "5px")
-                      .style("pointer-events", "none")
-                      .style("opacity", 0);
-
-    // Adding a legend
-    const legend = svg.append("g")
-                      .attr("transform", `translate(${margin.left},${margin.top})`);
-
-    legend.selectAll("rect")
-          .data(currencies)
-          .enter().append("rect")
-          .attr("x", width + 10)
-          .attr("y", (d, i) => i * 20)
-          .attr("width", 10)
-          .attr("height", 10)
-          .attr("fill", d => colors(d));
-
-    legend.selectAll("text")
-          .data(currencies)
-          .enter().append("text")
-          .attr("x", width + 25)
-          .attr("y", (d, i) => i * 20 + 9)
-          .text(d => d);
-
-    const zoom = d3.zoom()
-                   .scaleExtent([1, 10])
-                   .translateExtent([[0, 0], [width, height]])
-                   .extent([[0, 0], [width, height]])
-                   .on("zoom", (event) => {
-                     const newX = event.transform.rescaleX(x);
-                     const newY = event.transform.rescaleY(y);
-
-                     g.select(".x-axis").call(d3.axisBottom(newX));
-                     g.select(".y-axis").call(d3.axisLeft(newY));
-
-                     path.attr("d", d => line.x(p => newX(p.Date)).y(p => newY(p.value))(d.values));
-                     dots.attr("cx", d => newX(d.Date))
-                         .attr("cy", d => newY(d.value));
-                   });
-
-    svg.call(zoom);
-
-  }, [colorScheme]);
-
-  const toggleColorScheme = () => {
-    setColorScheme(prevScheme => prevScheme === 'schemeCategory10' ? 'schemeAccent' : 'schemeCategory10');
-  };
-
-  return (
-    <div>
-      <h1>LCH Notional Graph</h1>
-      <button onClick={toggleColorScheme}>Toggle Color Scheme</button>
-      <svg ref={svgRef} width="800" height="400"></svg>
-    </div>
-  );
-};
-
-const generateContinuousData = (startDate, numDays) => {
-  const continuousData = [];
-  const parseDate = d3.timeParse("%Y-%m-%d");
-  const formatDate = d3.timeFormat("%Y-%m-%d");
-
-  for (let i = 0; i < numDays; i++) {
-    const date = new Date(startDate);
-    date.setDate(date.getDate() + i);
-
-    continuousData.push({
-      Date: formatDate(date),
-      Target: Math.random() * 150 + 50,
-      AUD: Math.random() * 100,
-      EUR: Math.random() * 100,
-      GBP: Math.random() * 100,
-      JPY: Math.random() * 100,
-      USD: Math.random() * 100,
-      Total: Math.random() * 500 + 200
-    });
-  }
-
-  return continuousData;
-};
-
-export default LCHNotionalGraph;
-
-
-
-
-
-import React, { useEffect, useRef, useState } from 'react';
-import * as d3 from 'd3';
-
-const LCHNotionalGraph = () => {
-  const svgRef = useRef();
-  const [colorScheme, setColorScheme] = useState('schemeCategory10');
-  const [showSpikeLines, setShowSpikeLines] = useState(false);
-  const [compareDataOnHover, setCompareDataOnHover] = useState(false);
-
-  const mockData = generateContinuousData('2023-01-01', 30); // 30 days of data
-
-  useEffect(() => {
-    drawChart();
-  }, [colorScheme, showSpikeLines, compareDataOnHover]);
-
-  const drawChart = () => {
-    const svg = d3.select(svgRef.current);
-    svg.selectAll('*').remove(); // Clear previous chart
-
-    const margin = { top: 20, right: 30, bottom: 40, left: 50 },
-          width = 800 - margin.left - margin.right,
-          height = 400 - margin.top - margin.bottom;
-
-    const parseDate = d3.timeParse("%Y-%m-%d %H:%M");
-
-    mockData.forEach(d => {
-      d.Date = parseDate(d.Date);
-      d.Target = +d.Target;
-      d.AUD = +d.AUD;
-      d.EUR = +d.EUR;
-      d.GBP = +d.GBP;
-      d.JPY = +d.JPY;
-      d.USD = +d.USD;
-      d.Total = +d.Total;
-    });
-
-    const x = d3.scaleTime()
-                .domain(d3.extent(mockData, d => d.Date))
-                .range([0, width]);
-
-    const y = d3.scaleLinear()
-                .domain([0, d3.max(mockData, d => Math.max(d.Target, d.AUD, d.EUR, d.GBP, d.JPY, d.USD))])
-                .range([height, 0]);
-
-    const line = d3.line()
-                   .x(d => x(d.Date))
-                   .y(d => y(d.value))
-                   .curve(d3.curveMonotoneX);
-
-    const g = svg.append("g")
-                 .attr("transform", `translate(${margin.left},${margin.top})`);
-
-    // Define clip path
-    svg.append("defs").append("clipPath")
-       .attr("id", "clip")
-       .append("rect")
-       .attr("width", width)
-       .attr("height", height);
-
-    g.append("g")
-     .attr("class", "x-axis")
-     .attr("transform", `translate(0,${height})`)
-     .call(d3.axisBottom(x));
-
-    g.append("g")
-     .attr("class", "y-axis")
-     .call(d3.axisLeft(y));
-
-    const currencies = ["Target", "AUD", "EUR", "GBP", "JPY", "USD"];
-    const colors = d3.scaleOrdinal(d3[colorScheme]).domain(currencies);
-
-    const currencyData = currencies.map(currency => ({
-      currency,
-      values: interpolateData(mockData.map(d => ({ Date: d.Date, value: d[currency] })), x)
-    }));
-
-    const path = g.selectAll(".line")
-                  .data(currencyData)
-                  .enter().append("path")
-                  .attr("class", "line")
-                  .attr("fill", "none")
-                  .attr("stroke", d => colors(d.currency))
-                  .attr("stroke-width", 1.5)
-                  .attr("d", d => line(d.values))
-                  .attr("clip-path", "url(#clip)");
-
-    const dots = g.selectAll(".dot")
-                  .data(currencyData.flatMap(d => d.values))
-                  .enter().append("circle")
-                  .attr("class", "dot")
-                  .attr("cx", d => x(d.Date))
-                  .attr("cy", d => y(d.value))
-                  .attr("r", 3)
-                  .attr("fill", d => colors(d.currency))
-                  .attr("clip-path", "url(#clip)")
-                  .on("mouseover", (event, d) => {
-                    tooltip.transition().duration(200).style("opacity", 0.9);
-                    tooltip.html(`Date: ${d3.timeFormat("%Y-%m-%d %H:%M")(d.Date)}<br/>Value: ${d.value.toFixed(2)}`)
-                           .style("left", (event.pageX + 5) + "px")
-                           .style("top", (event.pageY - 28) + "px");
-
-                    if (showSpikeLines) {
-                      spikeLineX.attr("x1", x(d.Date)).attr("x2", x(d.Date))
-                                .attr("y1", 0).attr("y2", height)
-                                .style("display", "block");
-                      spikeLineY.attr("x1", 0).attr("x2", width)
-                                .attr("y1", y(d.value)).attr("y2", y(d.value))
-                                .style("display", "block");
-                    }
-
-                    if (compareDataOnHover) {
-                      const hoverData = currencyData.map(currency => {
-                        const hoverValue = currency.values.find(v => v.Date.getTime() === d.Date.getTime());
-                        return { currency: currency.currency, value: hoverValue.value };
-                      });
-                      compareTooltip.html(`Date: ${d3.timeFormat("%Y-%m-%d %H:%M")(d.Date)}<br/>` +
-                                          hoverData.map(hd => `${hd.currency}: ${hd.value.toFixed(2)}`).join('<br/>'))
-                                    .style("left", (event.pageX + 10) + "px")
-                                    .style("top", (event.pageY - 28) + "px")
-                                    .style("display", "block");
-                    }
-                  })
-                  .on("mouseout", () => {
-                    tooltip.transition().duration(500).style("opacity", 0);
-                    spikeLineX.style("display", "none");
-                    spikeLineY.style("display", "none");
-                    compareTooltip.style("display", "none");
-                  });
-
-    const tooltip = d3.select("body").append("div")
-                      .attr("class", "tooltip")
-                      .style("position", "absolute")
-                      .style("background", "lightsteelblue")
-                      .style("padding", "5px 10px")
-                      .style("border-radius", "5px")
-                      .style("pointer-events", "none")
-                      .style("opacity", 0);
-
-    const compareTooltip = d3.select("body").append("div")
-                             .attr("class", "compare-tooltip")
-                             .style("position", "absolute")
-                             .style("background", "white")
-                             .style("padding", "5px 10px")
-                             .style("border-radius", "5px")
-                             .style("pointer-events", "none")
-                             .style("border", "1px solid #ccc")
-                             .style("display", "none");
-
-    const spikeLineX = g.append("line")
-                        .attr("class", "spike-line-x")
-                        .attr("stroke", "black")
-                        .attr("stroke-dasharray", "3,3")
-                        .style("display", "none");
-
-    const spikeLineY = g.append("line")
-                        .attr("class", "spike-line-y")
-                        .attr("stroke", "black")
-                        .attr("stroke-dasharray", "3,3")
-                        .style("display", "none");
-
-    // Adding a legend
-    const legend = svg.append("g")
-                      .attr("transform", `translate(${margin.left},${margin.top})`);
-
-    legend.selectAll("rect")
-          .data(currencies)
-          .enter().append("rect")
-          .attr("x", width + 10)
-          .attr("y", (d, i) => i * 20)
-          .attr("width", 10)
-          .attr("height", 10)
-          .attr("fill", d => colors(d));
-
-    legend.selectAll("text")
-          .data(currencies)
-          .enter().append("text")
-          .attr("x", width + 25)
-          .attr("y", (d, i) => i * 20 + 9)
-          .text(d => d);
-
-    const zoom = d3.zoom()
-                   .scaleExtent([1, 10])
-                   .translateExtent([[0, 0], [width, height]])
-                   .extent([[0, 0], [width, height]])
-                   .on("zoom", (event) => {
-                     const newX = event.transform.rescaleX(x);
-                     const newY = event.transform.rescaleY(y);
-
-                     g.select(".x-axis").call(d3.axisBottom(newX));
-                     g.select(".y-axis").call(d3.axisLeft(newY));
-
-                     path.attr("d", d => line.x(p => newX(p.Date)).y(p => newY(p.value))(d.values));
-                     dots.attr("cx", d => newX(d.Date))
-                         .attr("cy", d => newY(d.value));
-                   });
-
-    svg.call(zoom);
-  };
-
-//   const toggleColorScheme = () => {
-//     setColorScheme(prevScheme => prevScheme === 'schemeCategory10' ? 'schemeAccent' : 'schemeCategory10');
+// npm install react-data-table-component react-datepicker
+
+
+
+// import React, { useState, useEffect } from 'react';
+// import Plot from 'react-plotly.js';
+// import Plotly from 'plotly.js-dist';
+// import { generateContinuousData } from '../utils/dataGenerator';
+
+// const PlotlyGraph = () => {
+//   const [showSpikeLines, setShowSpikeLines] = useState(false);
+//   const [compareWithTarget, setCompareWithTarget] = useState(false);
+//   const [selectedCurrency, setSelectedCurrency] = useState('AUD');
+//   const [showDifference, setShowDifference] = useState(false);
+//   const [compareDataOnHover, setCompareDataOnHover] = useState(false);
+//   const [config, setConfig] = useState({});
+//   const [layout, setLayout] = useState({});
+
+//   const mockData = generateContinuousData('2023-01-01', 30); // 30 days of data
+
+//   const data = [
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.Target),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'Target',
+//     },
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.AUD),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'AUD',
+//     },
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.EUR),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'EUR',
+//     },
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.GBP),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'GBP',
+//     },
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.JPY),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'JPY',
+//     },
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.USD),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'USD',
+//     }
+//   ];
+
+//   // Generate difference data and shaded area between selected currency and target
+//   const differenceData = {
+//     x: mockData.map(d => d.Date),
+//     y: mockData.map(d => d[selectedCurrency]),
+//     hoverinfo: 'x+y',
+//     type: 'scatter',
+//     mode: 'lines',
+//     fill: 'tonexty',
+//     fillcolor: 'rgba(0, 100, 80, 0.2)',
+//     line: { color: 'transparent' },
+//     name: `Difference (${selectedCurrency} - Target)`,
+//     showlegend: false,
+//     hovertext: mockData.map(d => `Difference: ${(d[selectedCurrency] - d.Target).toFixed(2)}`),
+//     hovertemplate: '%{hovertext}',
 //   };
 
-  const resetZoom = () => {
-    d3.select(svgRef.current).transition().duration(750).call(d3.zoom().transform, d3.zoomIdentity);
-    drawChart(); // Redraw the chart after resetting zoom
-  };
+//   useEffect(() => {
+//     const newLayout = {
+//       title: 'Currency Exchange Rates',
+//       xaxis: {
+//         title: 'Date',
+//         showspikes: true,
+//         spikemode: 'across',
+//         spikesnap: 'cursor',
+//         showline: true,
+//       },
+//       yaxis: {
+//         title: 'Value',
+//         showspikes: showSpikeLines || compareDataOnHover,
+//         spikemode: 'toaxis',
+//         showline: true,
+//         showticklabels: true,
+//         showgrid: true,
+//       },
+//       showlegend: true,
+//       hovermode: compareDataOnHover ? 'x unified' : 'closest',
+//     };
 
-  const toggleSpikeLines = () => {
-    setShowSpikeLines(!showSpikeLines);
-  };
+//     setLayout(newLayout);
 
-  const toggleCompareDataOnHover = () => {
-    setCompareDataOnHover(!compareDataOnHover);
-  };
+//     const newConfig = {
+//       responsive: true,
+//       displayModeBar: true,
+//       modeBarButtonsToRemove: ['select2d', 'lasso2d'],
+//       modeBarButtonsToAdd: [
+//         {
+//           name: showSpikeLines ? 'Hide Spike Lines' : 'Show Spike Lines',
+//           icon: Plotly.Icons.marker,
+//           click: () => setShowSpikeLines(!showSpikeLines),
+//         },
+//         {
+//           name: compareWithTarget ? 'Disable Compare with Target' : 'Enable Compare with Target',
+//           icon: Plotly.Icons.arrowBar,
+//           click: () => setCompareWithTarget(!compareWithTarget),
+//         },
+//         {
+//           name: showDifference ? 'Hide Difference' : 'Show Difference',
+//           icon: Plotly.Icons.arrowBar,
+//           click: () => setShowDifference(!showDifference),
+//         },
+//         {
+//           name: compareDataOnHover ? 'Disable Compare Data on Hover' : 'Enable Compare Data on Hover',
+//           icon: Plotly.Icons.hoverClosestCartesian,
+//           click: () => setCompareDataOnHover(!compareDataOnHover),
+//         },
+//       ],
+//     };
 
-  return (
-    <div>
-      <h1>LCH Notional Graph</h1>
-      {/* <button onClick={toggleColorScheme}>Toggle Color Scheme</button> */}
-      <button onClick={resetZoom}>Reset Zoom</button>
-      <button onClick={toggleSpikeLines}>{showSpikeLines ? 'Hide Spike Lines' : 'Show Spike Lines'}</button>
-      <button onClick={toggleCompareDataOnHover}>{compareDataOnHover ? 'Disable Compare Data on Hover' : 'Enable Compare Data on Hover'}</button>
-      <svg ref={svgRef} width="800" height="400"></svg>
-    </div>
-  );
-};
+//     setConfig(newConfig);
+//   }, [showSpikeLines, compareWithTarget, selectedCurrency, showDifference, compareDataOnHover]);
 
-const generateContinuousData = (startDate, numDays) => {
-  const continuousData = [];
-  const parseDate = d3.timeParse("%Y-%m-%d %H:%M");
-  const formatDate = d3.timeFormat("%Y-%m-%d %H:%M");
+//   const handleCurrencyChange = (e) => {
+//     const { value } = e.target;
+//     setSelectedCurrency(value);
+//   };
 
-  let previousValues = {
-    Target: Math.random() * 150 + 50,
-    AUD: Math.random() * 100,
-    EUR: Math.random() * 100,
-    GBP: Math.random() * 100,
-    JPY: Math.random() * 100,
-    USD: Math.random() * 100,
-    Total: Math.random() * 500 + 200
-  };
+//   const getData = () => {
+//     if (compareWithTarget) {
+//       const compareData = [
+//         data.find(d => d.name === 'Target'),
+//         data.find(d => d.name === selectedCurrency)
+//       ];
+//       return showDifference ? [...compareData, differenceData] : compareData;
+//     }
+//     return data;
+//   };
 
-  for (let i = 0; i < numDays * 24; i++) { // Generating hourly data
-    const date = new Date(startDate);
-    date.setHours(date.getHours() + i);
+//   return (
+//     <div>
+//       <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '10px' }}>
+//         <div>
+//           <label>Select Currency to Compare with Target: </label>
+//           <select name="selectedCurrency" onChange={handleCurrencyChange} value={selectedCurrency}>
+//             <option value="AUD">AUD</option>
+//             <option value="EUR">EUR</option>
+//             <option value="GBP">GBP</option>
+//             <option value="JPY">JPY</option>
+//             <option value="USD">USD</option>
+//           </select>
+//         </div>
+//       </div>
+//       <Plot
+//         data={getData()}
+//         layout={layout}
+//         config={config}
+//         style={{ width: '100%', height: '100%' }}
+//         useResizeHandler={true}
+//         onHover={(event) => {
+//           if (compareWithTarget && showDifference) {
+//             const points = event.points;
+//             let targetValue = null;
+//             let currencyValue = null;
 
-    previousValues = {
-      Target: previousValues.Target + (Math.random() * 20 - 10),
-      AUD: previousValues.AUD + (Math.random() * 10 - 5),
-      EUR: previousValues.EUR + (Math.random() * 10 - 5),
-      GBP: previousValues.GBP + (Math.random() * 10 - 5),
-      JPY: previousValues.JPY + (Math.random() * 10 - 5),
-      USD: previousValues.USD + (Math.random() * 10 - 5),
-      Total: previousValues.Total + (Math.random() * 50 - 25)
-    };
+//             points.forEach(point => {
+//               if (point.data.name === 'Target') {
+//                 targetValue = point.y;
+//               }
+//               if (point.data.name === selectedCurrency) {
+//                 currencyValue = point.y;
+//               }
+//             });
 
-    continuousData.push({
-      Date: formatDate(date),
-      Target: previousValues.Target,
-      AUD: previousValues.AUD,
-      EUR: previousValues.EUR,
-      GBP: previousValues.GBP,
-      JPY: previousValues.JPY,
-      USD: previousValues.USD,
-      Total: previousValues.Total
-    });
-  }
+//             if (targetValue !== null && currencyValue !== null) {
+//               const difference = (currencyValue - targetValue).toFixed(2);
+//               document.getElementById('difference-label').innerHTML = `Difference: ${difference}`;
+//             }
+//           }
+//         }}
+//         onUnhover={() => {
+//           document.getElementById('difference-label').innerHTML = '';
+//         }}
+//       />
+//       <div id="difference-label" style={{ textAlign: 'center', marginTop: '10px' }}></div>
+//     </div>
+//   );
+// };
 
-  return continuousData;
-};
-
-const interpolateData = (data, xScale) => {
-  const interpolatedData = [];
-  const xDomain = xScale.domain();
-  const step = (xDomain[1] - xDomain[0]) / 800; // Assuming 800 pixels for the width
-
-  for (let date = xDomain[0]; date <= xDomain[1]; date = new Date(date.getTime() + step)) {
-    const prev = data.find(d => d.Date <= date);
-    const next = data.find(d => d.Date > date);
-
-    if (prev && next) {
-      const interpolatedValue = prev.value + (next.value - prev.value) * ((date - prev.Date) / (next.Date - prev.Date));
-      interpolatedData.push({ Date: date, value: interpolatedValue });
-    } else if (prev) {
-      interpolatedData.push({ Date: date, value: prev.value });
-    }
-  }
-
-  return interpolatedData;
-};
-
-export default LCHNotionalGraph;
+// export default PlotlyGraph;
 
 
 
 
 
 
-import React, { useEffect, useRef, useState } from 'react';
-import * as d3 from 'd3';
 
-const LCHNotionalGraph = () => {
-  const svgRef = useRef();
+
+
+
+
+// import React, { useState, useEffect } from 'react';
+// import Plot from 'react-plotly.js';
+// import Plotly from 'plotly.js-dist';
+// import { generateContinuousData } from '../utils/dataGenerator';
+
+// const PlotlyGraph = () => {
+//   const [showSpikeLines, setShowSpikeLines] = useState(false);
+//   const [compareWithTarget, setCompareWithTarget] = useState(false);
+//   const [selectedCurrencies, setSelectedCurrencies] = useState(['AUD']);
+//   const [compareDataOnHover, setCompareDataOnHover] = useState(false);
+//   const [config, setConfig] = useState({});
+//   const [layout, setLayout] = useState({});
+//   const [summary, setSummary] = useState('');
+
+//   const mockData = generateContinuousData('2023-01-01', 30); // 30 days of data
+
+//   const data = [
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.Target),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'Target',
+//     },
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.AUD),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'AUD',
+//     },
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.EUR),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'EUR',
+//     },
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.GBP),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'GBP',
+//     },
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.JPY),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'JPY',
+//     },
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.USD),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'USD',
+//     }
+//   ];
+
+//   // Calculate the total line (sum of all selected currencies)
+//   const calculateTotal = () => {
+//     return mockData.map(d => {
+//       return selectedCurrencies.reduce((acc, curr) => acc + d[curr], 0);
+//     });
+//   };
+
+//   // Generate difference data and shaded area between total and target
+//   const differenceData = {
+//     x: mockData.map(d => d.Date),
+//     y: calculateTotal(),
+//     hoverinfo: 'x+y',
+//     type: 'scatter',
+//     mode: 'lines',
+//     fill: 'tonexty',
+//     fillcolor: 'rgba(0, 100, 80, 0.2)',
+//     line: { color: 'transparent' },
+//     name: `Difference (Total - Target)`,
+//     showlegend: false,
+//     hovertext: mockData.map((d, i) => `Difference: ${(calculateTotal()[i] - d.Target).toFixed(2)}`),
+//     hovertemplate: '%{hovertext}',
+//   };
+
+//   const totalLine = {
+//     x: mockData.map(d => d.Date),
+//     y: calculateTotal(),
+//     type: 'scatter',
+//     mode: 'lines+markers',
+//     name: 'Total',
+//   };
+
+//   useEffect(() => {
+//     const newLayout = {
+//       title: 'Currency Exchange Rates',
+//       xaxis: {
+//         title: 'Date',
+//         showspikes: true,
+//         spikemode: 'across',
+//         spikesnap: 'cursor',
+//         showline: true,
+//       },
+//       yaxis: {
+//         title: 'Value',
+//         showspikes: showSpikeLines || compareDataOnHover,
+//         spikemode: 'toaxis',
+//         showline: true,
+//         showticklabels: true,
+//         showgrid: true,
+//       },
+//       showlegend: true,
+//       hovermode: compareDataOnHover ? 'x unified' : 'closest',
+//     };
+
+//     setLayout(newLayout);
+
+//     const newConfig = {
+//       responsive: true,
+//       displayModeBar: true,
+//       modeBarButtonsToRemove: ['select2d', 'lasso2d'],
+//       modeBarButtonsToAdd: [
+//         {
+//           name: showSpikeLines ? 'Hide Spike Lines' : 'Show Spike Lines',
+//           icon: Plotly.Icons.marker,
+//           click: () => setShowSpikeLines(!showSpikeLines),
+//         },
+//         {
+//           name: compareWithTarget ? 'Disable Compare with Target' : 'Enable Compare with Target',
+//           icon: Plotly.Icons.arrowBar,
+//           click: () => setCompareWithTarget(!compareWithTarget),
+//         },
+//         {
+//           name: compareDataOnHover ? 'Disable Compare Data on Hover' : 'Enable Compare Data on Hover',
+//           icon: Plotly.Icons.hoverClosestCartesian,
+//           click: () => setCompareDataOnHover(!compareDataOnHover),
+//         },
+//       ],
+//     };
+
+//     setConfig(newConfig);
+//   }, [showSpikeLines, compareWithTarget, selectedCurrencies, compareDataOnHover]);
+
+//   const handleCurrencyChange = (e) => {
+//     const options = e.target.options;
+//     const selected = [];
+//     for (let i = 0; i < options.length; i++) {
+//       if (options[i].selected) {
+//         selected.push(options[i].value);
+//       }
+//     }
+//     setSelectedCurrencies(selected);
+//   };
+
+//   const getData = () => {
+//     const compareData = [
+//       data.find(d => d.name === 'Target'),
+//       ...data.filter(d => selectedCurrencies.includes(d.name))
+//     ];
+//     if (compareWithTarget) {
+//       compareData.push(totalLine);
+//       compareData.push(differenceData);
+//     }
+//     return compareData;
+//   };
+
+//   const handleHover = (event) => {
+//     if (compareWithTarget) {
+//       const points = event.points;
+//       let targetValue = null;
+//       let totalValue = null;
+
+//       points.forEach(point => {
+//         if (point.data.name === 'Target') {
+//           targetValue = point.y;
+//         }
+//         if (point.data.name === 'Total') {
+//           totalValue = point.y;
+//         }
+//       });
+
+//       if (targetValue !== null && totalValue !== null) {
+//         const difference = (totalValue - targetValue).toFixed(2);
+//         const totalBreakdown = selectedCurrencies.map(currency => {
+//           return `${currency}: ${mockData[points[0].pointIndex][currency].toFixed(2)}`;
+//         }).join('<br>');
+
+//         let summaryHTML = `<strong>Total: ${totalValue.toFixed(2)}</strong><br>`;
+//         summaryHTML += `<strong>Target: ${targetValue.toFixed(2)}</strong><br>`;
+//         summaryHTML += `Difference: ${difference}<br><br>`;
+//         summaryHTML += `<strong>Breakdown of Selected Currencies:</strong><br>${totalBreakdown}`;
+//         setSummary(summaryHTML);
+//         document.getElementById('difference-label').innerHTML = summaryHTML;
+//       }
+//     }
+//   };
+
+//   return (
+//     <div>
+//       <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '10px' }}>
+//         <div>
+//           <label>Select Currencies to Compare with Target: </label>
+//           <select multiple name="selectedCurrencies" onChange={handleCurrencyChange} value={selectedCurrencies}>
+//             <option value="AUD">AUD</option>
+//             <option value="EUR">EUR</option>
+//             <option value="GBP">GBP</option>
+//             <option value="JPY">JPY</option>
+//             <option value="USD">USD</option>
+//           </select>
+//         </div>
+//       </div>
+//       <Plot
+//         data={getData()}
+//         layout={layout}
+//         config={config}
+//         style={{ width: '100%', height: '100%' }}
+//         useResizeHandler={true}
+//         onHover={handleHover}
+//         onUnhover={() => {
+//           document.getElementById('difference-label').innerHTML = '';
+//         }}
+//       />
+//       <div id="difference-label" style={{ textAlign: 'center', marginTop: '10px' }}></div>
+//       {compareWithTarget && (
+//         <div style={{ border: '1px solid black', padding: '10px', marginTop: '10px' }}>
+//           <h3>Summary</h3>
+//           <div dangerouslySetInnerHTML={{ __html: summary }} />
+//         </div>
+//       )}
+//       <button onClick={() => setCompareWithTarget(!compareWithTarget)}>
+//         {compareWithTarget ? 'Disable Compare with Target' : 'Enable Compare with Target'}
+//       </button>
+//     </div>
+//   );
+// };
+
+// export default PlotlyGraph;
+
+
+
+
+
+
+
+
+
+
+
+// import React, { useState, useEffect } from 'react';
+// import Plot from 'react-plotly.js';
+// import Plotly from 'plotly.js-dist';
+// import { generateContinuousData } from '../utils/dataGenerator';
+
+// const PlotlyGraph = () => {
+//   const [showSpikeLines, setShowSpikeLines] = useState(false);
+//   const [compareWithTarget, setCompareWithTarget] = useState(false);
+//   const [selectedCurrencies, setSelectedCurrencies] = useState(['AUD']);
+//   const [compareDataOnHover, setCompareDataOnHover] = useState(false);
+//   const [config, setConfig] = useState({});
+//   const [layout, setLayout] = useState({});
+//   const [summary, setSummary] = useState('');
+
+//   const mockData = generateContinuousData('2023-01-01', 30); // 30 days of data
+
+//   const data = [
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.Target),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'Target',
+//       line: { color: 'blue', width: 2 },
+//       marker: { size: 5 },
+//     },
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.AUD),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'AUD',
+//       line: { color: 'orange', width: 2 },
+//       marker: { size: 5 },
+//     },
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.EUR),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'EUR',
+//       line: { color: 'green', width: 2 },
+//       marker: { size: 5 },
+//     },
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.GBP),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'GBP',
+//       line: { color: 'red', width: 2 },
+//       marker: { size: 5 },
+//     },
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.JPY),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'JPY',
+//       line: { color: 'purple', width: 2 },
+//       marker: { size: 5 },
+//     },
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.USD),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'USD',
+//       line: { color: 'brown', width: 2 },
+//       marker: { size: 5 },
+//     }
+//   ];
+
+//   // Calculate the total line (sum of all selected currencies)
+//   const calculateTotal = () => {
+//     return mockData.map(d => {
+//       return selectedCurrencies.reduce((acc, curr) => acc + d[curr], 0);
+//     });
+//   };
+
+//   const totalValues = calculateTotal();
+
+//   // Generate difference data and shaded area between total and target
+//   const differenceData = {
+//     x: mockData.map(d => d.Date),
+//     y: totalValues,
+//     type: 'scatter',
+//     mode: 'lines',
+//     fill: 'tonexty',
+//     fillcolor: 'rgba(0, 100, 80, 0.2)',
+//     line: { color: 'transparent' },
+//     name: `Difference (Total - Target)`,
+//     showlegend: false,
+//   };
+
+//   const totalLine = {
+//     x: mockData.map(d => d.Date),
+//     y: totalValues,
+//     type: 'scatter',
+//     mode: 'lines+markers',
+//     name: 'Total',
+//     line: { color: 'black', width: 2 },
+//     marker: { size: 5 },
+//   };
+
+//   const targetLine = {
+//     x: mockData.map(d => d.Date),
+//     y: mockData.map(d => d.Target),
+//     type: 'scatter',
+//     mode: 'lines+markers',
+//     name: 'Target',
+//     line: { color: 'blue', width: 2 },
+//     marker: { size: 5 },
+//   };
+
+//   useEffect(() => {
+//     const newLayout = {
+//       title: 'Currency Exchange Rates',
+//       xaxis: {
+//         title: 'Date',
+//         showspikes: true,
+//         spikemode: 'across',
+//         spikesnap: 'cursor',
+//         showline: true,
+//         linewidth: 2,
+//         mirror: true,
+//       },
+//       yaxis: {
+//         title: 'Value',
+//         showspikes: showSpikeLines || compareDataOnHover,
+//         spikemode: 'toaxis',
+//         showline: true,
+//         linewidth: 2,
+//         mirror: true,
+//         showticklabels: true,
+//         showgrid: true,
+//       },
+//       legend: {
+//         orientation: 'h',
+//         y: -0.2,
+//       },
+//       hovermode: compareDataOnHover ? 'x unified' : 'closest',
+//       margin: { l: 60, r: 20, t: 40, b: 60 },
+//     };
+
+//     setLayout(newLayout);
+
+//     const newConfig = {
+//       responsive: true,
+//       displayModeBar: true,
+//       modeBarButtonsToRemove: ['select2d', 'lasso2d'],
+//       modeBarButtonsToAdd: [
+//         {
+//           name: showSpikeLines ? 'Hide Spike Lines' : 'Show Spike Lines',
+//           icon: Plotly.Icons.marker,
+//           click: () => setShowSpikeLines(!showSpikeLines),
+//         },
+//         {
+//           name: compareWithTarget ? 'Disable Compare with Target' : 'Enable Compare with Target',
+//           icon: Plotly.Icons.arrowBar,
+//           click: () => setCompareWithTarget(!compareWithTarget),
+//         },
+//         {
+//           name: compareDataOnHover ? 'Disable Compare Data on Hover' : 'Enable Compare Data on Hover',
+//           icon: Plotly.Icons.hoverClosestCartesian,
+//           click: () => setCompareDataOnHover(!compareDataOnHover),
+//         },
+//       ],
+//     };
+
+//     setConfig(newConfig);
+//   }, [showSpikeLines, compareWithTarget, selectedCurrencies, compareDataOnHover]);
+
+//   const handleCurrencyChange = (e) => {
+//     const options = e.target.options;
+//     const selected = [];
+//     for (let i = 0; i < options.length; i++) {
+//       if (options[i].selected) {
+//         selected.push(options[i].value);
+//       }
+//     }
+//     setSelectedCurrencies(selected);
+//   };
+
+//   const getData = () => {
+//     const compareData = [
+//       targetLine,
+//       ...data.filter(d => selectedCurrencies.includes(d.name)),
+//       totalLine,
+//     ];
+//     return compareWithTarget ? [...compareData, differenceData] : compareData;
+//   };
+
+//   const handleHover = (event) => {
+//     if (compareWithTarget) {
+//       const points = event.points;
+//       let targetValue = null;
+//       let totalValue = null;
+
+//       points.forEach(point => {
+//         if (point.data.name === 'Target') {
+//           targetValue = point.y;
+//         }
+//         if (point.data.name === 'Total') {
+//           totalValue = point.y;
+//         }
+//       });
+
+//       if (targetValue !== null && totalValue !== null) {
+//         const difference = (totalValue - targetValue).toFixed(2);
+//         const totalBreakdown = selectedCurrencies.map(currency => {
+//           return `${currency}: ${mockData[points[0].pointIndex][currency].toFixed(2)}`;
+//         }).join('<br>');
+
+//         let summaryHTML = `<strong>Total: ${totalValue.toFixed(2)}</strong><br>`;
+//         summaryHTML += `<strong>Target: ${targetValue.toFixed(2)}</strong><br>`;
+//         summaryHTML += `Difference: ${difference}<br><br>`;
+//         summaryHTML += `<strong>Breakdown of Selected Currencies:</strong><br>${totalBreakdown}`;
+//         setSummary(summaryHTML);
+//       }
+//     }
+//   };
+
+//   return (
+//     <div>
+//       <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
+//         <div>
+//           <label>Select Currencies to Compare with Target: </label>
+//           <select
+//             multiple
+//             name="selectedCurrencies"
+//             onChange={handleCurrencyChange}
+//             value={selectedCurrencies}
+//             style={{ height: '100px', width: '200px', padding: '5px', fontSize: '14px' }}
+//           >
+//             <option value="AUD">AUD</option>
+//             <option value="EUR">EUR</option>
+//             <option value="GBP">GBP</option>
+//             <option value="JPY">JPY</option>
+//             <option value="USD">USD</option>
+//           </select>
+//         </div>
+//       </div>
+//       <Plot
+//         data={getData()}
+//         layout={layout}
+//         config={config}
+//         style={{ width: '100%', height: '500px' }}
+//         useResizeHandler={true}
+//         onHover={handleHover}
+//         onUnhover={() => {
+//           setSummary('');
+//         }}
+//       />
+//       <div id="difference-label" style={{ textAlign: 'center', marginTop: '10px' }}></div>
+//       {compareWithTarget && (
+//         <div style={{ border: '1px solid black', padding: '10px', marginTop: '20px', backgroundColor: '#f9f9f9' }}>
+//           <h3>Summary</h3>
+//           <div dangerouslySetInnerHTML={{ __html: summary }} />
+//         </div>
+//       )}
+//       <div style={{ display: 'flex', justifyContent: 'center', marginTop: '20px' }}>
+//         <button
+//           onClick={() => setCompareWithTarget(!compareWithTarget)}
+//           style={{ padding: '10px 20px', fontSize: '16px', cursor: 'pointer', backgroundColor: '#007bff', color: '#fff', border: 'none', borderRadius: '5px' }}
+//         >
+//           {compareWithTarget ? 'Disable Compare with Target' : 'Enable Compare with Target'}
+//         </button>
+//       </div>
+//     </div>
+//   );
+// };
+
+// export default PlotlyGraph;
+
+
+
+
+
+
+
+
+// import React, { useState, useEffect } from 'react';
+// import Plot from 'react-plotly.js';
+// import Plotly from 'plotly.js-dist';
+// import { generateContinuousData } from '../utils/dataGenerator';
+
+// const PlotlyGraph = () => {
+//   const [showSpikeLines, setShowSpikeLines] = useState(false);
+//   const [compareWithTarget, setCompareWithTarget] = useState(false);
+//   const [selectedCurrencies, setSelectedCurrencies] = useState(['AUD']);
+//   const [compareDataOnHover, setCompareDataOnHover] = useState(false);
+//   const [config, setConfig] = useState({});
+//   const [layout, setLayout] = useState({});
+//   const [summary, setSummary] = useState('');
+
+//   const mockData = generateContinuousData('2023-01-01', 30); // 30 days of data
+
+//   const data = [
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.Target),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'Target',
+//       line: { color: 'blue', width: 2 },
+//       marker: { size: 5 },
+//     },
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.AUD),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'AUD',
+//       line: { color: 'orange', width: 2 },
+//       marker: { size: 5 },
+//     },
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.EUR),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'EUR',
+//       line: { color: 'green', width: 2 },
+//       marker: { size: 5 },
+//     },
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.GBP),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'GBP',
+//       line: { color: 'red', width: 2 },
+//       marker: { size: 5 },
+//     },
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.JPY),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'JPY',
+//       line: { color: 'purple', width: 2 },
+//       marker: { size: 5 },
+//     },
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.USD),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'USD',
+//       line: { color: 'brown', width: 2 },
+//       marker: { size: 5 },
+//     }
+//   ];
+
+//   // Calculate the total line (sum of all selected currencies)
+//   const calculateTotal = () => {
+//     return mockData.map(d => {
+//       return selectedCurrencies.reduce((acc, curr) => acc + d[curr], 0);
+//     });
+//   };
+
+//   const totalValues = calculateTotal();
+
+//   // Generate difference data and shaded area between total and target
+//   const differenceData = {
+//     x: mockData.map(d => d.Date),
+//     y: totalValues.map((value, index) => value - mockData[index].Target),
+//     type: 'scatter',
+//     mode: 'lines',
+//     fill: 'tonexty',
+//     fillcolor: 'rgba(0, 100, 80, 0.2)',
+//     line: { color: 'transparent' },
+//     name: `Difference (Total - Target)`,
+//     showlegend: false,
+//   };
+
+//   const totalLine = {
+//     x: mockData.map(d => d.Date),
+//     y: totalValues,
+//     type: 'scatter',
+//     mode: 'lines+markers',
+//     name: 'Total',
+//     line: { color: 'black', width: 2 },
+//     marker: { size: 5 },
+//   };
+
+//   const targetLine = {
+//     x: mockData.map(d => d.Date),
+//     y: mockData.map(d => d.Target),
+//     type: 'scatter',
+//     mode: 'lines+markers',
+//     name: 'Target',
+//     line: { color: 'blue', width: 2 },
+//     marker: { size: 5 },
+//   };
+
+//   useEffect(() => {
+//     const newLayout = {
+//       title: 'Currency Exchange Rates',
+//       xaxis: {
+//         title: 'Date',
+//         showspikes: true,
+//         spikemode: 'across',
+//         spikesnap: 'cursor',
+//         showline: true,
+//         linewidth: 2,
+//         mirror: true,
+//       },
+//       yaxis: {
+//         title: 'Value',
+//         showspikes: showSpikeLines || compareDataOnHover,
+//         spikemode: 'toaxis',
+//         showline: true,
+//         linewidth: 2,
+//         mirror: true,
+//         showticklabels: true,
+//         showgrid: true,
+//       },
+//       legend: {
+//         orientation: 'h',
+//         y: -0.2,
+//       },
+//       hovermode: compareDataOnHover ? 'x unified' : 'closest',
+//       margin: { l: 60, r: 20, t: 40, b: 60 },
+//     };
+
+//     setLayout(newLayout);
+
+//     const newConfig = {
+//       responsive: true,
+//       displayModeBar: true,
+//       modeBarButtonsToRemove: ['select2d', 'lasso2d'],
+//       modeBarButtonsToAdd: [
+//         {
+//           name: showSpikeLines ? 'Hide Spike Lines' : 'Show Spike Lines',
+//           icon: Plotly.Icons.marker,
+//           click: () => setShowSpikeLines(!showSpikeLines),
+//         },
+//         {
+//           name: compareWithTarget ? 'Disable Compare with Target' : 'Enable Compare with Target',
+//           icon: Plotly.Icons.arrowBar,
+//           click: () => setCompareWithTarget(!compareWithTarget),
+//         },
+//         {
+//           name: compareDataOnHover ? 'Disable Compare Data on Hover' : 'Enable Compare Data on Hover',
+//           icon: Plotly.Icons.hoverClosestCartesian,
+//           click: () => setCompareDataOnHover(!compareDataOnHover),
+//         },
+//       ],
+//     };
+
+//     setConfig(newConfig);
+//   }, [showSpikeLines, compareWithTarget, selectedCurrencies, compareDataOnHover]);
+
+//   const handleCurrencyChange = (e) => {
+//     const options = e.target.options;
+//     const selected = [];
+//     for (let i = 0; i < options.length; i++) {
+//       if (options[i].selected) {
+//         selected.push(options[i].value);
+//       }
+//     }
+//     setSelectedCurrencies(selected);
+//   };
+
+//   const getData = () => {
+//     const compareData = [
+//       targetLine,
+//       ...data.filter(d => selectedCurrencies.includes(d.name)),
+//       totalLine,
+//     ];
+//     return compareWithTarget ? [...compareData, differenceData] : compareData;
+//   };
+
+//   const handleHover = (event) => {
+//     if (compareWithTarget) {
+//       const points = event.points;
+//       let targetValue = null;
+//       let totalValue = null;
+
+//       points.forEach(point => {
+//         if (point.data.name === 'Target') {
+//           targetValue = point.y;
+//         }
+//         if (point.data.name === 'Total') {
+//           totalValue = point.y;
+//         }
+//       });
+
+//       if (targetValue !== null && totalValue !== null) {
+//         const difference = (totalValue - targetValue).toFixed(2);
+//         const totalBreakdown = selectedCurrencies.map(currency => {
+//           return `${currency}: ${mockData[points[0].pointIndex][currency].toFixed(2)}`;
+//         }).join('<br>');
+
+//         let summaryHTML = `<strong>Total: ${totalValue.toFixed(2)}</strong><br>`;
+//         summaryHTML += `<strong>Target: ${targetValue.toFixed(2)}</strong><br>`;
+//         summaryHTML += `Difference: ${difference}<br><br>`;
+//         summaryHTML += `<strong>Breakdown of Selected Currencies:</strong><br>${totalBreakdown}`;
+//         setSummary(summaryHTML);
+//         document.getElementById('difference-label').innerHTML = `Difference: ${difference}`;
+//       }
+//     }
+//   };
+
+//   return (
+//     <div>
+//       <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
+//         <div>
+//           <label>Select Currencies to Compare with Target: </label>
+//           <select
+//             multiple
+//             name="selectedCurrencies"
+//             onChange={handleCurrencyChange}
+//             value={selectedCurrencies}
+//             style={{ height: '100px', width: '200px', padding: '5px', fontSize: '14px' }}
+//           >
+//             <option value="AUD">AUD</option>
+//             <option value="EUR">EUR</option>
+//             <option value="GBP">GBP</option>
+//             <option value="JPY">JPY</option>
+//             <option value="USD">USD</option>
+//           </select>
+//         </div>
+//       </div>
+//       <Plot
+//         data={getData()}
+//         layout={layout}
+//         config={config}
+//         style={{ width: '100%', height: '500px' }}
+//         useResizeHandler={true}
+//         onHover={handleHover}
+//         onUnhover={() => {
+//           document.getElementById('difference-label').innerHTML = '';
+//         }}
+//       />
+//       <div id="difference-label" style={{ textAlign: 'center', marginTop: '10px' }}></div>
+//       {compareWithTarget && (
+//         <div style={{ border: '1px solid black', padding: '10px', marginTop: '20px', backgroundColor: '#f9f9f9' }}>
+//           <h3>Summary</h3>
+//           <div dangerouslySetInnerHTML={{ __html: summary }} />
+//         </div>
+//       )}
+//       <div style={{ display: 'flex', justifyContent: 'center', marginTop: '20px' }}>
+//         <button
+//           onClick={() => setCompareWithTarget(!compareWithTarget)}
+//           style={{ padding: '10px 20px', fontSize: '16px', cursor: 'pointer', backgroundColor: '#007bff', color: '#fff', border: 'none', borderRadius: '5px' }}
+//         >
+//           {compareWithTarget ? 'Disable Compare with Target' : 'Enable Compare with Target'}
+//         </button>
+//       </div>
+//     </div>
+//   );
+// };
+
+// export default PlotlyGraph;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// import React, { useState, useEffect } from 'react';
+// import Plot from 'react-plotly.js';
+// import Plotly from 'plotly.js-dist';
+// import { generateContinuousData } from '../utils/dataGenerator';
+
+// const PlotlyGraph = () => {
+//   const [showSpikeLines, setShowSpikeLines] = useState(false);
+//   const [compareWithTarget, setCompareWithTarget] = useState(false);
+//   const [selectedCurrencies, setSelectedCurrencies] = useState(['AUD']);
+//   const [compareDataOnHover, setCompareDataOnHover] = useState(false);
+//   const [config, setConfig] = useState({});
+//   const [layout, setLayout] = useState({});
+//   const [summary, setSummary] = useState('');
+
+//   const mockData = generateContinuousData('2023-01-01', 30); // 30 days of data
+
+//   const data = [
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.Target),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'Target',
+//       line: { color: 'blue', width: 2 },
+//       marker: { size: 5 },
+//     },
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.AUD),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'AUD',
+//       line: { color: 'orange', width: 2 },
+//       marker: { size: 5 },
+//     },
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.EUR),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'EUR',
+//       line: { color: 'green', width: 2 },
+//       marker: { size: 5 },
+//     },
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.GBP),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'GBP',
+//       line: { color: 'red', width: 2 },
+//       marker: { size: 5 },
+//     },
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.JPY),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'JPY',
+//       line: { color: 'purple', width: 2 },
+//       marker: { size: 5 },
+//     },
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.USD),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'USD',
+//       line: { color: 'brown', width: 2 },
+//       marker: { size: 5 },
+//     }
+//   ];
+
+//   // Calculate the total line (sum of all selected currencies)
+//   const calculateTotal = () => {
+//     return mockData.map(d => {
+//       return selectedCurrencies.reduce((acc, curr) => acc + d[curr], 0);
+//     });
+//   };
+
+//   const totalValues = calculateTotal();
+
+//   // Generate shaded area between total and target
+//   const shadeData = {
+//     x: [...mockData.map(d => d.Date), ...mockData.map(d => d.Date).reverse()],
+//     y: [...totalValues, ...mockData.map(d => d.Target).reverse()],
+//     type: 'scatter',
+//     fill: 'toself',
+//     fillcolor: 'rgba(0, 100, 80, 0.2)',
+//     line: { color: 'transparent' },
+//     showlegend: false,
+//   };
+
+//   const totalLine = {
+//     x: mockData.map(d => d.Date),
+//     y: totalValues,
+//     type: 'scatter',
+//     mode: 'lines+markers',
+//     name: 'Total',
+//     line: { color: 'black', width: 2 },
+//     marker: { size: 5 },
+//   };
+
+//   const targetLine = {
+//     x: mockData.map(d => d.Date),
+//     y: mockData.map(d => d.Target),
+//     type: 'scatter',
+//     mode: 'lines+markers',
+//     name: 'Target',
+//     line: { color: 'blue', width: 2 },
+//     marker: { size: 5 },
+//   };
+
+//   useEffect(() => {
+//     const newLayout = {
+//       title: 'Currency Exchange Rates',
+//       xaxis: {
+//         title: 'Date',
+//         showspikes: true,
+//         spikemode: 'across',
+//         spikesnap: 'cursor',
+//         showline: true,
+//         linewidth: 2,
+//         mirror: true,
+//       },
+//       yaxis: {
+//         title: 'Value',
+//         showspikes: showSpikeLines || compareDataOnHover,
+//         spikemode: 'toaxis',
+//         showline: true,
+//         linewidth: 2,
+//         mirror: true,
+//         showticklabels: true,
+//         showgrid: true,
+//       },
+//       legend: {
+//         orientation: 'h',
+//         y: -0.2,
+//       },
+//       hovermode: compareDataOnHover ? 'x unified' : 'closest',
+//       margin: { l: 60, r: 20, t: 40, b: 60 },
+//     };
+
+//     setLayout(newLayout);
+
+//     const newConfig = {
+//       responsive: true,
+//       displayModeBar: true,
+//       modeBarButtonsToRemove: ['select2d', 'lasso2d'],
+//       modeBarButtonsToAdd: [
+//         {
+//           name: showSpikeLines ? 'Hide Spike Lines' : 'Show Spike Lines',
+//           icon: Plotly.Icons.marker,
+//           click: () => setShowSpikeLines(!showSpikeLines),
+//         },
+//         {
+//           name: compareWithTarget ? 'Disable Compare with Target' : 'Enable Compare with Target',
+//           icon: Plotly.Icons.arrowBar,
+//           click: () => setCompareWithTarget(!compareWithTarget),
+//         },
+//         {
+//           name: compareDataOnHover ? 'Disable Compare Data on Hover' : 'Enable Compare Data on Hover',
+//           icon: Plotly.Icons.hoverClosestCartesian,
+//           click: () => setCompareDataOnHover(!compareDataOnHover),
+//         },
+//       ],
+//     };
+
+//     setConfig(newConfig);
+//   }, [showSpikeLines, compareWithTarget, selectedCurrencies, compareDataOnHover]);
+
+//   const handleCurrencyChange = (e) => {
+//     const options = e.target.options;
+//     const selected = [];
+//     for (let i = 0; i < options.length; i++) {
+//       if (options[i].selected) {
+//         selected.push(options[i].value);
+//       }
+//     }
+//     setSelectedCurrencies(selected);
+//   };
+
+//   const getData = () => {
+//     const compareData = [
+//       shadeData,
+//       targetLine,
+//       ...data.filter(d => selectedCurrencies.includes(d.name)),
+//       totalLine,
+//     ];
+//     return compareWithTarget ? compareData : compareData.filter(d => d !== shadeData);
+//   };
+
+//   const handleHover = (event) => {
+//     if (compareWithTarget) {
+//       const points = event.points;
+//       let targetValue = null;
+//       let totalValue = null;
+
+//       points.forEach(point => {
+//         if (point.data.name === 'Target') {
+//           targetValue = point.y;
+//         }
+//         if (point.data.name === 'Total') {
+//           totalValue = point.y;
+//         }
+//       });
+
+//       if (targetValue !== null && totalValue !== null) {
+//         const difference = (totalValue - targetValue).toFixed(2);
+//         const totalBreakdown = selectedCurrencies.map(currency => {
+//           return `${currency}: ${mockData[points[0].pointIndex][currency].toFixed(2)}`;
+//         }).join('<br>');
+
+//         let summaryHTML = `<strong>Total: ${totalValue.toFixed(2)}</strong><br>`;
+//         summaryHTML += `<strong>Target: ${targetValue.toFixed(2)}</strong><br>`;
+//         summaryHTML += `Difference: ${difference}<br><br>`;
+//         summaryHTML += `<strong>Breakdown of Selected Currencies:</strong><br>${totalBreakdown}`;
+//         setSummary(summaryHTML);
+//         document.getElementById('difference-label').innerHTML = `Difference: ${difference}`;
+//       }
+//     }
+//   };
+
+//   return (
+//     <div>
+//       <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
+//         <div>
+//           <label>Select Currencies to Compare with Target: </label>
+//           <select
+//             multiple
+//             name="selectedCurrencies"
+//             onChange={handleCurrencyChange}
+//             value={selectedCurrencies}
+//             style={{ height: '100px', width: '200px', padding: '5px', fontSize: '14px' }}
+//           >
+//             <option value="AUD">AUD</option>
+//             <option value="EUR">EUR</option>
+//             <option value="GBP">GBP</option>
+//             <option value="JPY">JPY</option>
+//             <option value="USD">USD</option>
+//           </select>
+//         </div>
+//       </div>
+//       <Plot
+//         data={getData()}
+//         layout={layout}
+//         config={config}
+//         style={{ width: '100%', height: '500px' }}
+//         useResizeHandler={true}
+//         onHover={handleHover}
+//         onUnhover={() => {
+//           document.getElementById('difference-label').innerHTML = '';
+//         }}
+//       />
+//       <div id="difference-label" style={{ textAlign: 'center', marginTop: '10px' }}></div>
+//       {compareWithTarget && (
+//         <div style={{ border: '1px solid black', padding: '10px', marginTop: '20px', backgroundColor: '#f9f9f9' }}>
+//           <h3>Summary</h3>
+//           <div dangerouslySetInnerHTML={{ __html: summary }} />
+//         </div>
+//       )}
+//       <div style={{ display: 'flex', justifyContent: 'center', marginTop: '20px' }}>
+//         <button
+//           onClick={() => setCompareWithTarget(!compareWithTarget)}
+//           style={{ padding: '10px 20px', fontSize: '16px', cursor: 'pointer', backgroundColor: '#007bff', color: '#fff', border: 'none', borderRadius: '5px' }}
+//         >
+//           {compareWithTarget ? 'Disable Compare with Target' : 'Enable Compare with Target'}
+//         </button>
+//       </div>
+//     </div>
+//   );
+// };
+
+// export default PlotlyGraph;
+
+
+
+
+
+
+
+// import React, { useState, useEffect } from 'react';
+// import Plot from 'react-plotly.js';
+// import Plotly from 'plotly.js-dist';
+// import { generateContinuousData } from '../utils/dataGenerator';
+
+// const PlotlyGraph = () => {
+//   const [showSpikeLines, setShowSpikeLines] = useState(false);
+//   const [compareWithTarget, setCompareWithTarget] = useState(false);
+//   const [selectedCurrencies, setSelectedCurrencies] = useState(['AUD']);
+//   const [compareDataOnHover, setCompareDataOnHover] = useState(false);
+//   const [config, setConfig] = useState({});
+//   const [layout, setLayout] = useState({});
+//   const [summary, setSummary] = useState('');
+
+//   const mockData = generateContinuousData('2023-01-01', 30); // 30 days of data
+
+//   const data = [
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.Target),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'Target',
+//       line: { color: 'blue', width: 2 },
+//       marker: { size: 5 },
+//     },
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.AUD),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'AUD',
+//       line: { color: 'orange', width: 2 },
+//       marker: { size: 5 },
+//     },
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.EUR),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'EUR',
+//       line: { color: 'green', width: 2 },
+//       marker: { size: 5 },
+//     },
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.GBP),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'GBP',
+//       line: { color: 'red', width: 2 },
+//       marker: { size: 5 },
+//     },
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.JPY),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'JPY',
+//       line: { color: 'purple', width: 2 },
+//       marker: { size: 5 },
+//     },
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.USD),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'USD',
+//       line: { color: 'brown', width: 2 },
+//       marker: { size: 5 },
+//     }
+//   ];
+
+//   // Calculate the total line (sum of all selected currencies)
+//   const calculateTotal = () => {
+//     return mockData.map(d => {
+//       return selectedCurrencies.reduce((acc, curr) => acc + d[curr], 0);
+//     });
+//   };
+
+//   const totalValues = calculateTotal();
+
+//   // Generate shaded area between total and target
+//   const shadeData = {
+//     x: [...mockData.map(d => d.Date), ...mockData.map(d => d.Date).reverse()],
+//     y: [...totalValues, ...mockData.map(d => d.Target).reverse()],
+//     type: 'scatter',
+//     fill: 'toself',
+//     fillcolor: 'rgba(0, 100, 80, 0.2)',
+//     line: { color: 'transparent' },
+//     showlegend: false,
+//     hoverinfo: 'skip', // This removes the "trace" label from the hover tooltip
+//   };
+
+//   const totalLine = {
+//     x: mockData.map(d => d.Date),
+//     y: totalValues,
+//     type: 'scatter',
+//     mode: 'lines+markers',
+//     name: 'Total',
+//     line: { color: 'black', width: 2 },
+//     marker: { size: 5 },
+//   };
+
+//   const targetLine = {
+//     x: mockData.map(d => d.Date),
+//     y: mockData.map(d => d.Target),
+//     type: 'scatter',
+//     mode: 'lines+markers',
+//     name: 'Target',
+//     line: { color: 'blue', width: 2 },
+//     marker: { size: 5 },
+//   };
+
+//   useEffect(() => {
+//     const newLayout = {
+//       title: 'Currency Exchange Rates',
+//       xaxis: {
+//         title: 'Date',
+//         showspikes: true,
+//         spikemode: 'across',
+//         spikesnap: 'cursor',
+//         showline: true,
+//         linewidth: 2,
+//         mirror: true,
+//       },
+//       yaxis: {
+//         title: 'Value',
+//         showspikes: showSpikeLines || compareDataOnHover,
+//         spikemode: 'toaxis',
+//         showline: true,
+//         linewidth: 2,
+//         mirror: true,
+//         showticklabels: true,
+//         showgrid: true,
+//       },
+//       legend: {
+//         orientation: 'h',
+//         y: -0.2,
+//       },
+//       hovermode: compareDataOnHover ? 'x unified' : 'closest',
+//       margin: { l: 60, r: 20, t: 40, b: 60 },
+//     };
+
+//     setLayout(newLayout);
+
+//     const newConfig = {
+//       responsive: true,
+//       displayModeBar: true,
+//       modeBarButtonsToRemove: ['select2d', 'lasso2d'],
+//       modeBarButtonsToAdd: [
+//         {
+//           name: showSpikeLines ? 'Hide Spike Lines' : 'Show Spike Lines',
+//           icon: Plotly.Icons.marker,
+//           click: () => setShowSpikeLines(!showSpikeLines),
+//         },
+//         {
+//           name: compareWithTarget ? 'Disable Compare with Target' : 'Enable Compare with Target',
+//           icon: Plotly.Icons.arrowBar,
+//           click: () => setCompareWithTarget(!compareWithTarget),
+//         },
+//         {
+//           name: compareDataOnHover ? 'Disable Compare Data on Hover' : 'Enable Compare Data on Hover',
+//           icon: Plotly.Icons.hoverClosestCartesian,
+//           click: () => setCompareDataOnHover(!compareDataOnHover),
+//         },
+//       ],
+//     };
+
+//     setConfig(newConfig);
+//   }, [showSpikeLines, compareWithTarget, selectedCurrencies, compareDataOnHover]);
+
+//   const handleCurrencyChange = (e) => {
+//     const options = e.target.options;
+//     const selected = [];
+//     for (let i = 0; i < options.length; i++) {
+//       if (options[i].selected) {
+//         selected.push(options[i].value);
+//       }
+//     }
+//     setSelectedCurrencies(selected);
+//   };
+
+//   const getData = () => {
+//     const compareData = [
+//       shadeData,
+//       targetLine,
+//       ...data.filter(d => selectedCurrencies.includes(d.name)),
+//       totalLine,
+//     ];
+//     return compareWithTarget ? compareData : compareData.filter(d => d !== shadeData);
+//   };
+
+//   const handleHover = (event) => {
+//     if (compareWithTarget) {
+//       const points = event.points;
+//       let targetValue = null;
+//       let totalValue = null;
+
+//       points.forEach(point => {
+//         if (point.data.name === 'Target') {
+//           targetValue = point.y;
+//         }
+//         if (point.data.name === 'Total') {
+//           totalValue = point.y;
+//         }
+//       });
+
+//       if (targetValue !== null && totalValue !== null) {
+//         const difference = (totalValue - targetValue).toFixed(2);
+//         const totalBreakdown = selectedCurrencies.map(currency => {
+//           return `${currency}: ${mockData[points[0].pointIndex][currency].toFixed(2)}`;
+//         }).join('<br>');
+
+//         let summaryHTML = `<strong>Total: ${totalValue.toFixed(2)}</strong><br>`;
+//         summaryHTML += `<strong>Target: ${targetValue.toFixed(2)}</strong><br>`;
+//         summaryHTML += `Difference: ${difference}<br><br>`;
+//         summaryHTML += `<strong>Breakdown of Selected Currencies:</strong><br>${totalBreakdown}`;
+//         setSummary(summaryHTML);
+//         document.getElementById('difference-label').innerHTML = `Difference: ${difference}`;
+//       }
+//     }
+//   };
+
+//   return (
+//     <div>
+//       <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
+//         <div>
+//           <label>Select Currencies to Compare with Target: </label>
+//           <select
+//             multiple
+//             name="selectedCurrencies"
+//             onChange={handleCurrencyChange}
+//             value={selectedCurrencies}
+//             style={{ height: '100px', width: '200px', padding: '5px', fontSize: '14px' }}
+//           >
+//             <option value="AUD">AUD</option>
+//             <option value="EUR">EUR</option>
+//             <option value="GBP">GBP</option>
+//             <option value="JPY">JPY</option>
+//             <option value="USD">USD</option>
+//           </select>
+//         </div>
+//       </div>
+//       <Plot
+//         data={getData()}
+//         layout={layout}
+//         config={config}
+//         style={{ width: '100%', height: '500px' }}
+//         useResizeHandler={true}
+//         onHover={handleHover}
+//         onUnhover={() => {
+//           document.getElementById('difference-label').innerHTML = '';
+//         }}
+//       />
+//       <div id="difference-label" style={{ textAlign: 'center', marginTop: '10px' }}></div>
+//       {compareWithTarget && (
+//         <div style={{ border: '1px solid black', padding: '10px', marginTop: '20px', backgroundColor: '#f9f9f9' }}>
+//           <h3>Summary</h3>
+//           <div dangerouslySetInnerHTML={{ __html: summary }} />
+//         </div>
+//       )}
+//       <div style={{ display: 'flex', justifyContent: 'center', marginTop: '20px' }}>
+//         <button
+//           onClick={() => setCompareWithTarget(!compareWithTarget)}
+//           style={{ padding: '10px 20px', fontSize: '16px', cursor: 'pointer', backgroundColor: '#007bff', color: '#fff', border: 'none', borderRadius: '5px' }}
+//         >
+//           {compareWithTarget ? 'Disable Compare with Target' : 'Enable Compare with Target'}
+//         </button>
+//       </div>
+//     </div>
+//   );
+// };
+
+// export default PlotlyGraph;
+
+
+
+
+
+
+
+
+//working graph version except difference
+
+
+
+
+
+// import React, { useState, useEffect } from 'react';
+// import Plot from 'react-plotly.js';
+// import Plotly from 'plotly.js-dist';
+// import { generateContinuousData } from '../utils/dataGenerator';
+
+// const PlotlyGraph = () => {
+//   const [showSpikeLines, setShowSpikeLines] = useState(false);
+//   const [compareWithTarget, setCompareWithTarget] = useState(false);
+//   const [selectedCurrencies, setSelectedCurrencies] = useState(['AUD']);
+//   const [compareDataOnHover, setCompareDataOnHover] = useState(false);
+//   const [config, setConfig] = useState({});
+//   const [layout, setLayout] = useState({});
+//   const [summary, setSummary] = useState('');
+
+//   const mockData = generateContinuousData('2023-01-01', 30); // 30 days of data
+
+//   const data = [
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.Target),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'Target',
+//       line: { color: 'blue', width: 2 },
+//       marker: { size: 5 },
+//     },
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.AUD),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'AUD',
+//       line: { color: 'orange', width: 2 },
+//       marker: { size: 5 },
+//     },
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.EUR),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'EUR',
+//       line: { color: 'green', width: 2 },
+//       marker: { size: 5 },
+//     },
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.GBP),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'GBP',
+//       line: { color: 'red', width: 2 },
+//       marker: { size: 5 },
+//     },
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.JPY),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'JPY',
+//       line: { color: 'purple', width: 2 },
+//       marker: { size: 5 },
+//     },
+//     {
+//       x: mockData.map(d => d.Date),
+//       y: mockData.map(d => d.USD),
+//       type: 'scatter',
+//       mode: 'lines+markers',
+//       name: 'USD',
+//       line: { color: 'brown', width: 2 },
+//       marker: { size: 5 },
+//     }
+//   ];
+
+//   // Calculate the total line (sum of all selected currencies)
+//   const calculateTotal = () => {
+//     return mockData.map(d => {
+//       return selectedCurrencies.reduce((acc, curr) => acc + d[curr], 0);
+//     });
+//   };
+
+//   const totalValues = calculateTotal();
+
+//   // Generate shaded area between total and target
+//   const shadeData = {
+//     x: [...mockData.map(d => d.Date), ...mockData.map(d => d.Date).reverse()],
+//     y: [...totalValues, ...mockData.map(d => d.Target).reverse()],
+//     type: 'scatter',
+//     fill: 'toself',
+//     fillcolor: 'rgba(0, 100, 80, 0.2)',
+//     line: { color: 'transparent' },
+//     showlegend: false,
+//     hoverinfo: 'skip', // This removes the "trace" label from the hover tooltip
+//   };
+
+//   const totalLine = {
+//     x: mockData.map(d => d.Date),
+//     y: totalValues,
+//     type: 'scatter',
+//     mode: 'lines+markers',
+//     name: 'Total',
+//     line: { color: 'black', width: 2 },
+//     marker: { size: 5 },
+//   };
+
+//   const targetLine = {
+//     x: mockData.map(d => d.Date),
+//     y: mockData.map(d => d.Target),
+//     type: 'scatter',
+//     mode: 'lines+markers',
+//     name: 'Target',
+//     line: { color: 'blue', width: 2 },
+//     marker: { size: 5 },
+//   };
+
+//   useEffect(() => {
+//     const newLayout = {
+//       title: 'Currency Exchange Rates',
+//       xaxis: {
+//         title: 'Date',
+//         showspikes: true,
+//         spikemode: 'across',
+//         spikesnap: 'cursor',
+//         showline: true,
+//         linewidth: 2,
+//         mirror: true,
+//       },
+//       yaxis: {
+//         title: 'Value',
+//         showspikes: showSpikeLines || compareDataOnHover,
+//         spikemode: 'toaxis',
+//         showline: true,
+//         linewidth: 2,
+//         mirror: true,
+//         showticklabels: true,
+//         showgrid: true,
+//       },
+//       legend: {
+//         orientation: 'h',
+//         y: -0.2,
+//       },
+//       hovermode: compareDataOnHover ? 'x unified' : 'closest',
+//       margin: { l: 60, r: 20, t: 40, b: 60 },
+//     };
+
+//     setLayout(newLayout);
+
+//     const newConfig = {
+//       responsive: true,
+//       displayModeBar: true,
+//       modeBarButtonsToRemove: ['select2d', 'lasso2d'],
+//       modeBarButtonsToAdd: [
+//         {
+//           name: showSpikeLines ? 'Hide Spike Lines' : 'Show Spike Lines',
+//           icon: Plotly.Icons.marker,
+//           click: () => setShowSpikeLines(!showSpikeLines),
+//         },
+//         {
+//           name: compareWithTarget ? 'Disable Compare with Target' : 'Enable Compare with Target',
+//           icon: Plotly.Icons.arrowBar,
+//           click: () => setCompareWithTarget(!compareWithTarget),
+//         },
+//         {
+//           name: compareDataOnHover ? 'Disable Compare Data on Hover' : 'Enable Compare Data on Hover',
+//           icon: Plotly.Icons.hoverClosestCartesian,
+//           click: () => setCompareDataOnHover(!compareDataOnHover),
+//         },
+//       ],
+//     };
+
+//     setConfig(newConfig);
+//   }, [showSpikeLines, compareWithTarget, selectedCurrencies, compareDataOnHover]);
+
+//   const handleCurrencyChange = (e) => {
+//     const options = e.target.options;
+//     const selected = [];
+//     for (let i = 0; i < options.length; i++) {
+//       if (options[i].selected) {
+//         selected.push(options[i].value);
+//       }
+//     }
+//     setSelectedCurrencies(selected);
+//   };
+
+//   const getData = () => {
+//     const compareData = [
+//       shadeData,
+//       targetLine,
+//       ...data.filter(d => selectedCurrencies.includes(d.name)),
+//       totalLine,
+//     ];
+//     return compareWithTarget ? compareData : compareData.filter(d => d !== shadeData);
+//   };
+
+//   const handleHover = (event) => {
+//     if (compareWithTarget) {
+//       const points = event.points;
+//       let targetValue = null;
+//       let totalValue = null;
+
+//       points.forEach(point => {
+//         if (point.data.name === 'Target') {
+//           targetValue = point.y;
+//         }
+//         if (point.data.name === 'Total') {
+//           totalValue = point.y;
+//         }
+//       });
+
+//       if (targetValue !== null && totalValue !== null) {
+//         const difference = (totalValue - targetValue).toFixed(2);
+//         const totalBreakdown = selectedCurrencies.map(currency => {
+//           return `${currency}: ${mockData[points[0].pointIndex][currency].toFixed(2)}`;
+//         }).join('<br>');
+
+//         let summaryHTML = `<strong>Total: ${totalValue.toFixed(2)}</strong><br>`;
+//         summaryHTML += `<strong>Target: ${targetValue.toFixed(2)}</strong><br>`;
+//         summaryHTML += `Difference: ${difference}<br><br>`;
+//         summaryHTML += `<strong>Breakdown of Selected Currencies:</strong><br>${totalBreakdown}`;
+//         setSummary(summaryHTML);
+//         document.getElementById('difference-label').innerHTML = `Difference: ${difference}`;
+//       }
+//     }
+//   };
+
+//   return (
+//     <div>
+//       <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
+//         <div>
+//           <label>Select Currencies to Compare with Target: </label>
+//           <select
+//             multiple
+//             name="selectedCurrencies"
+//             onChange={handleCurrencyChange}
+//             value={selectedCurrencies}
+//             style={{ height: '100px', width: '200px', padding: '5px', fontSize: '14px' }}
+//           >
+//             <option value="AUD">AUD</option>
+//             <option value="EUR">EUR</option>
+//             <option value="GBP">GBP</option>
+//             <option value="JPY">JPY</option>
+//             <option value="USD">USD</option>
+//           </select>
+//         </div>
+//       </div>
+//       <Plot
+//         data={getData()}
+//         layout={layout}
+//         config={config}
+//         style={{ width: '100%', height: '500px' }}
+//         useResizeHandler={true}
+//         onHover={handleHover}
+//         onUnhover={() => {
+//           document.getElementById('difference-label').innerHTML = '';
+//         }}
+//       />
+//       <div id="difference-label" style={{ textAlign: 'center', marginTop: '10px' }}></div>
+//       {compareWithTarget && (
+//         <div style={{ border: '1px solid black', padding: '10px', marginTop: '20px', backgroundColor: '#f9f9f9' }}>
+//           <h3>Summary</h3>
+//           <div dangerouslySetInnerHTML={{ __html: summary }} />
+//         </div>
+//       )}
+//       <div style={{ display: 'flex', justifyContent: 'center', marginTop: '20px' }}>
+//         <button
+//           onClick={() => setCompareWithTarget(!compareWithTarget)}
+//           style={{ padding: '10px 20px', fontSize: '16px', cursor: 'pointer', backgroundColor: '#007bff', color: '#fff', border: 'none', borderRadius: '5px' }}
+//         >
+//           {compareWithTarget ? 'Disable Compare with Target' : 'Enable Compare with Target'}
+//         </button>
+//       </div>
+//     </div>
+//   );
+// };
+
+// export default PlotlyGraph;
+
+
+import React, { useState, useEffect } from 'react';
+import Plot from 'react-plotly.js';
+import Plotly from 'plotly.js-dist';
+import DataTable from 'react-data-table-component';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
+import { generateContinuousData } from '../utils/dataGenerator';
+
+const PlotlyGraph = () => {
   const [showSpikeLines, setShowSpikeLines] = useState(false);
+  const [compareWithTarget, setCompareWithTarget] = useState(false);
+  const [selectedCurrencies, setSelectedCurrencies] = useState(['AUD']);
   const [compareDataOnHover, setCompareDataOnHover] = useState(false);
-  const [selectZoom, setSelectZoom] = useState(false);
+  const [config, setConfig] = useState({});
+  const [layout, setLayout] = useState({});
+  const [summary, setSummary] = useState('');
+  const [startDate, setStartDate] = useState(new Date('2023-01-01'));
+  const [endDate, setEndDate] = useState(new Date('2023-01-30'));
 
   const mockData = generateContinuousData('2023-01-01', 30); // 30 days of data
 
-  useEffect(() => {
-    drawChart();
-  }, [showSpikeLines, compareDataOnHover, selectZoom]);
+  const data = [
+    {
+      x: mockData.map(d => d.Date),
+      y: mockData.map(d => d.Target),
+      type: 'scatter',
+      mode: 'lines+markers',
+      name: 'Target',
+      line: { color: 'blue', width: 2 },
+      marker: { size: 5 },
+    },
+    {
+      x: mockData.map(d => d.Date),
+      y: mockData.map(d => d.AUD),
+      type: 'scatter',
+      mode: 'lines+markers',
+      name: 'AUD',
+      line: { color: 'orange', width: 2 },
+      marker: { size: 5 },
+    },
+    {
+      x: mockData.map(d => d.Date),
+      y: mockData.map(d => d.EUR),
+      type: 'scatter',
+      mode: 'lines+markers',
+      name: 'EUR',
+      line: { color: 'green', width: 2 },
+      marker: { size: 5 },
+    },
+    {
+      x: mockData.map(d => d.Date),
+      y: mockData.map(d => d.GBP),
+      type: 'scatter',
+      mode: 'lines+markers',
+      name: 'GBP',
+      line: { color: 'red', width: 2 },
+      marker: { size: 5 },
+    },
+    {
+      x: mockData.map(d => d.Date),
+      y: mockData.map(d => d.JPY),
+      type: 'scatter',
+      mode: 'lines+markers',
+      name: 'JPY',
+      line: { color: 'purple', width: 2 },
+      marker: { size: 5 },
+    },
+    {
+      x: mockData.map(d => d.Date),
+      y: mockData.map(d => d.USD),
+      type: 'scatter',
+      mode: 'lines+markers',
+      name: 'USD',
+      line: { color: 'brown', width: 2 },
+      marker: { size: 5 },
+    }
+  ];
 
-  const drawChart = () => {
-    const svg = d3.select(svgRef.current);
-    svg.selectAll('*').remove(); // Clear previous chart
-
-    const margin = { top: 20, right: 30, bottom: 40, left: 50 },
-          width = 800 - margin.left - margin.right,
-          height = 400 - margin.top - margin.bottom;
-
-    const parseDate = d3.timeParse("%Y-%m-%d %H:%M");
-
-    mockData.forEach(d => {
-      d.Date = parseDate(d.Date);
-      d.Target = +d.Target;
-      d.AUD = +d.AUD;
-      d.EUR = +d.EUR;
-      d.GBP = +d.GBP;
-      d.JPY = +d.JPY;
-      d.USD = +d.USD;
-      d.Total = +d.Total;
+  // Calculate the total line (sum of all selected currencies)
+  const calculateTotal = () => {
+    return mockData.map(d => {
+      return selectedCurrencies.reduce((acc, curr) => acc + d[curr], 0);
     });
+  };
 
-    const x = d3.scaleTime()
-                .domain(d3.extent(mockData, d => d.Date))
-                .range([0, width]);
+  const totalValues = calculateTotal();
 
-    const y = d3.scaleLinear()
-                .domain([0, d3.max(mockData, d => Math.max(d.Target, d.AUD, d.EUR, d.GBP, d.JPY, d.USD))])
-                .range([height, 0]);
+  // Generate shaded area between total and target
+  const shadeData = {
+    x: [...mockData.map(d => d.Date), ...mockData.map(d => d.Date).reverse()],
+    y: [...totalValues, ...mockData.map(d => d.Target).reverse()],
+    type: 'scatter',
+    fill: 'toself',
+    fillcolor: 'rgba(0, 100, 80, 0.2)',
+    line: { color: 'transparent' },
+    showlegend: false,
+    hoverinfo: 'skip', // This removes the "trace" label from the hover tooltip
+  };
 
-    const line = d3.line()
-                   .x(d => x(d.Date))
-                   .y(d => y(d.value))
-                   .curve(d3.curveMonotoneX);
+  const totalLine = {
+    x: mockData.map(d => d.Date),
+    y: totalValues,
+    type: 'scatter',
+    mode: 'lines+markers',
+    name: 'Total',
+    line: { color: 'black', width: 2 },
+    marker: { size: 5 },
+  };
 
-    const g = svg.append("g")
-                 .attr("transform", `translate(${margin.left},${margin.top})`);
+  const targetLine = {
+    x: mockData.map(d => d.Date),
+    y: mockData.map(d => d.Target),
+    type: 'scatter',
+    mode: 'lines+markers',
+    name: 'Target',
+    line: { color: 'blue', width: 2 },
+    marker: { size: 5 },
+  };
 
-    g.append("g")
-     .attr("class", "x-axis")
-     .attr("transform", `translate(0,${height})`)
-     .call(d3.axisBottom(x));
+  useEffect(() => {
+    const newLayout = {
+      title: 'Currency Exchange Rates',
+      xaxis: {
+        title: 'Date',
+        showspikes: true,
+        spikemode: 'across',
+        spikesnap: 'cursor',
+        showline: true,
+        linewidth: 2,
+        mirror: true,
+        range: [startDate, endDate],
+      },
+      yaxis: {
+        title: 'Value',
+        showspikes: showSpikeLines || compareDataOnHover,
+        spikemode: 'toaxis',
+        showline: true,
+        linewidth: 2,
+        mirror: true,
+        showticklabels: true,
+        showgrid: true,
+      },
+      legend: {
+        orientation: 'h',
+        y: -0.2,
+      },
+      hovermode: compareDataOnHover ? 'x unified' : 'closest',
+      margin: { l: 60, r: 20, t: 40, b: 60 },
+    };
 
-    g.append("g")
-     .attr("class", "y-axis")
-     .call(d3.axisLeft(y));
+    setLayout(newLayout);
 
-    const currencies = ["Target", "AUD", "EUR", "GBP", "JPY", "USD"];
-    const colors = d3.scaleOrdinal(d3.schemeCategory10).domain(currencies);
+    const newConfig = {
+      responsive: true,
+      displayModeBar: true,
+      modeBarButtonsToRemove: ['select2d', 'lasso2d'],
+      modeBarButtonsToAdd: [
+        {
+          name: showSpikeLines ? 'Hide Spike Lines' : 'Show Spike Lines',
+          icon: Plotly.Icons.marker,
+          click: () => setShowSpikeLines(!showSpikeLines),
+        },
+        {
+          name: compareWithTarget ? 'Disable Compare with Target' : 'Enable Compare with Target',
+          icon: Plotly.Icons.arrowBar,
+          click: () => setCompareWithTarget(!compareWithTarget),
+        },
+        {
+          name: compareDataOnHover ? 'Disable Compare Data on Hover' : 'Enable Compare Data on Hover',
+          icon: Plotly.Icons.hoverClosestCartesian,
+          click: () => setCompareDataOnHover(!compareDataOnHover),
+        },
+      ],
+    };
 
-    const currencyData = currencies.map(currency => ({
-      currency,
-      values: mockData.map(d => ({ Date: d.Date, value: d[currency] }))
-    }));
+    setConfig(newConfig);
+  }, [showSpikeLines, compareWithTarget, selectedCurrencies, compareDataOnHover, startDate, endDate]);
 
-    const path = g.selectAll(".line")
-                  .data(currencyData)
-                  .enter().append("path")
-                  .attr("class", "line")
-                  .attr("fill", "none")
-                  .attr("stroke", d => colors(d.currency))
-                  .attr("stroke-width", 1.5)
-                  .attr("d", d => line(d.values));
+  const handleCurrencyChange = (e) => {
+    const options = e.target.options;
+    const selected = [];
+    for (let i = 0; i < options.length; i++) {
+      if (options[i].selected) {
+        selected.push(options[i].value);
+      }
+    }
+    setSelectedCurrencies(selected);
+  };
 
-    const dots = g.selectAll(".dot")
-                  .data(currencyData.flatMap(d => d.values))
-                  .enter().append("circle")
-                  .attr("class", "dot")
-                  .attr("cx", d => x(d.Date))
-                  .attr("cy", d => y(d.value))
-                  .attr("r", 3)
-                  .attr("fill", d => colors(d.currency))
-                  .on("mouseover", (event, d) => {
-                    tooltip.transition().duration(200).style("opacity", 0.9);
-                    tooltip.html(`Date: ${d3.timeFormat("%Y-%m-%d %H:%M")(d.Date)}<br/>Value: ${d.value.toFixed(2)}`)
-                           .style("left", (event.pageX + 5) + "px")
-                           .style("top", (event.pageY - 28) + "px");
+  const getData = () => {
+    const compareData = [
+      shadeData,
+      targetLine,
+      ...data.filter(d => selectedCurrencies.includes(d.name)),
+      totalLine,
+    ];
+    return compareWithTarget ? compareData : compareData.filter(d => d !== shadeData);
+  };
 
-                    if (showSpikeLines) {
-                      spikeLineX.attr("x1", x(d.Date)).attr("x2", x(d.Date))
-                                .attr("y1", 0).attr("y2", height)
-                                .style("display", "block");
-                      spikeLineY.attr("x1", 0).attr("x2", width)
-                                .attr("y1", y(d.value)).attr("y2", y(d.value))
-                                .style("display", "block");
-                    }
+  const handleHover = (event) => {
+    if (compareWithTarget) {
+      const points = event.points;
+      let targetValue = null;
+      let totalValue = null;
 
-                    if (compareDataOnHover) {
-                      const hoverData = currencyData.map(currency => {
-                        const hoverValue = currency.values.find(v => v.Date.getTime() === d.Date.getTime());
-                        return { currency: currency.currency, value: hoverValue.value };
-                      });
-                      compareTooltip.html(`Date: ${d3.timeFormat("%Y-%m-%d %H:%M")(d.Date)}<br/>` +
-                                          hoverData.map(hd => `${hd.currency}: ${hd.value.toFixed(2)}`).join('<br/>'))
-                                    .style("left", (event.pageX + 10) + "px")
-                                    .style("top", (event.pageY - 28) + "px")
-                                    .style("display", "block");
-                    }
-                  })
-                  .on("mouseout", () => {
-                    tooltip.transition().duration(500).style("opacity", 0);
-                    spikeLineX.style("display", "none");
-                    spikeLineY.style("display", "none");
-                    compareTooltip.style("display", "none");
-                  });
+      points.forEach(point => {
+        if (point.data.name === 'Target') {
+          targetValue = point.y;
+        }
+        if (point.data.name === 'Total') {
+          totalValue = point.y;
+        }
+      });
 
-    const tooltip = d3.select("body").append("div")
-                      .attr("class", "tooltip")
-                      .style("position", "absolute")
-                      .style("background", "lightsteelblue")
-                      .style("padding", "5px 10px")
-                      .style("border-radius", "5px")
-                      .style("pointer-events", "none")
-                      .style("opacity", 0);
+      if (targetValue !== null && totalValue !== null) {
+        const difference = (totalValue - targetValue).toFixed(2);
+        const totalBreakdown = selectedCurrencies.map(currency => {
+          return `${currency}: ${mockData[points[0].pointIndex][currency].toFixed(2)}`;
+        }).join('<br>');
 
-    const compareTooltip = d3.select("body").append("div")
-                             .attr("class", "compare-tooltip")
-                             .style("position", "absolute")
-                             .style("background", "white")
-                             .style("padding", "5px 10px")
-                             .style("border-radius", "5px")
-                             .style("pointer-events", "none")
-                             .style("border", "1px solid #ccc")
-                             .style("display", "none");
-
-    const spikeLineX = g.append("line")
-                        .attr("class", "spike-line-x")
-                        .attr("stroke", "black")
-                        .attr("stroke-dasharray", "3,3")
-                        .style("display", "none");
-
-    const spikeLineY = g.append("line")
-                        .attr("class", "spike-line-y")
-                        .attr("stroke", "black")
-                        .attr("stroke-dasharray", "3,3")
-                        .style("display", "none");
-
-    // Adding a legend
-    const legend = svg.append("g")
-                      .attr("transform", `translate(${margin.left},${margin.top})`);
-
-    legend.selectAll("rect")
-          .data(currencies)
-          .enter().append("rect")
-          .attr("x", width + 10)
-          .attr("y", (d, i) => i * 20)
-          .attr("width", 10)
-          .attr("height", 10)
-          .attr("fill", d => colors(d));
-
-    legend.selectAll("text")
-          .data(currencies)
-          .enter().append("text")
-          .attr("x", width + 25)
-          .attr("y", (d, i) => i * 20 + 9)
-          .text(d => d);
-
-    const zoom = d3.zoom()
-                   .scaleExtent([1, 10])
-                   .translateExtent([[0, 0], [width, height]])
-                   .extent([[0, 0], [width, height]])
-                   .on("zoom", (event) => {
-                     const newX = event.transform.rescaleX(x);
-                     const newY = event.transform.rescaleY(y);
-
-                     g.select(".x-axis").call(d3.axisBottom(newX));
-                     g.select(".y-axis").call(d3.axisLeft(newY));
-
-                     path.attr("d", d => line.x(p => newX(p.Date)).y(p => newY(p.value))(d.values));
-                     dots.attr("cx", d => newX(d.Date))
-                         .attr("cy", d => newY(d.value));
-                   });
-
-    svg.call(zoom);
-
-    if (selectZoom) {
-      const brush = d3.brush()
-                      .extent([[0, 0], [width, height]])
-                      .on("end", ({ selection }) => {
-                        if (selection) {
-                          const [[x0, y0], [x1, y1]] = selection;
-                          const newX = x.domain([x.invert(x0), x.invert(x1)]);
-                          const newY = y.domain([y.invert(y1), y.invert(y0)]);
-                          svg.transition().call(zoom.transform, d3.zoomIdentity.scale(width / (x1 - x0)).translate(-x0, -y0));
-                        }
-                      });
-      svg.append("g").call(brush);
+        let summaryHTML = `<strong>Total: ${totalValue.toFixed(2)}</strong><br>`;
+        summaryHTML += `<strong>Target: ${targetValue.toFixed(2)}</strong><br>`;
+        summaryHTML += `Difference: ${difference}<br><br>`;
+        summaryHTML += `<strong>Breakdown of Selected Currencies:</strong><br>${totalBreakdown}`;
+        setSummary(summaryHTML);
+        document.getElementById('difference-label').innerHTML = `Difference: ${difference}`;
+      }
     }
   };
 
-  const resetZoom = () => {
-    const svg = d3.select(svgRef.current);
-    svg.transition().duration(750).call(d3.zoom().transform, d3.zoomIdentity)
-      .on("end", drawChart); // Ensure the chart is redrawn after resetting zoom
-  };
+  const columns = [
+    { name: 'Date', selector: row => row.Date, sortable: true },
+    { name: 'Target', selector: row => row.Target, sortable: true },
+    { name: 'AUD', selector: row => row.AUD, sortable: true },
+    { name: 'EUR', selector: row => row.EUR, sortable: true },
+    { name: 'GBP', selector: row => row.GBP, sortable: true },
+    { name: 'JPY', selector: row => row.JPY, sortable: true },
+    { name: 'USD', selector: row => row.USD, sortable: true },
+    { name: 'Total', selector: row => row.Total, sortable: true },
+  ];
 
-  const toggleSpikeLines = () => {
-    setShowSpikeLines(!showSpikeLines);
-  };
+  const tableData = mockData.map(d => ({
+    Date: d.Date,
+    Target: d.Target.toFixed(2),
+    AUD: d.AUD.toFixed(2),
+    EUR: d.EUR.toFixed(2),
+    GBP: d.GBP.toFixed(2),
+    JPY: d.JPY.toFixed(2),
+    USD: d.USD.toFixed(2),
+    Total: totalValues[mockData.indexOf(d)].toFixed(2)
+  }));
 
-  const toggleCompareDataOnHover = () => {
-    setCompareDataOnHover(!compareDataOnHover);
-  };
-
-  const toggleSelectZoom = () => {
-    setSelectZoom(!selectZoom);
+  const handleDateRangeChange = (ranges) => {
+    setStartDate(ranges[0]);
+    setEndDate(ranges[1]);
   };
 
   return (
     <div>
-      <h1>LCH Notional Graph</h1>
-      <button onClick={resetZoom}>Reset Zoom</button>
-      <button onClick={toggleSpikeLines}>{showSpikeLines ? 'Hide Spike Lines' : 'Show Spike Lines'}</button>
-      <button onClick={toggleCompareDataOnHover}>{compareDataOnHover ? 'Disable Compare Data on Hover' : 'Enable Compare Data on Hover'}</button>
-      <button onClick={toggleSelectZoom}>{selectZoom ? 'Disable Select Zoom' : 'Enable Select Zoom'}</button>
-      <svg ref={svgRef} width="800" height="400"></svg>
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
+        <div>
+          <label>Select Currencies to Compare with Target: </label>
+          <select
+            multiple
+            name="selectedCurrencies"
+            onChange={handleCurrencyChange}
+            value={selectedCurrencies}
+            style={{ height: '100px', width: '200px', padding: '5px', fontSize: '14px' }}
+          >
+            <option value="AUD">AUD</option>
+            <option value="EUR">EUR</option>
+            <option value="GBP">GBP</option>
+            <option value="JPY">JPY</option>
+            <option value="USD">USD</option>
+          </select>
+        </div>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
+        <div>
+          <label>Select Date Range: </label>
+          <DatePicker
+            selected={startDate}
+            onChange={date => setStartDate(date)}
+            selectsStart
+            startDate={startDate}
+            endDate={endDate}
+          />
+          <DatePicker
+            selected={endDate}
+            onChange={date => setEndDate(date)}
+            selectsEnd
+            startDate={startDate}
+            endDate={endDate}
+            minDate={startDate}
+          />
+        </div>
+      </div>
+      <Plot
+        data={getData()}
+        layout={layout}
+        config={config}
+        style={{ width: '100%', height: '500px' }}
+        useResizeHandler={true}
+        onHover={handleHover}
+        onUnhover={() => {
+          document.getElementById('difference-label').innerHTML = '';
+        }}
+      />
+      <div id="difference-label" style={{ textAlign: 'center', marginTop: '10px' }}></div>
+      {compareWithTarget && (
+        <div style={{ border: '1px solid black', padding: '10px', marginTop: '20px', backgroundColor: '#f9f9f9' }}>
+          <h3>Summary</h3>
+          <div dangerouslySetInnerHTML={{ __html: summary }} />
+        </div>
+      )}
+      <div style={{ display: 'flex', justifyContent: 'center', marginTop: '20px' }}>
+        <button
+          onClick={() => setCompareWithTarget(!compareWithTarget)}
+          style={{ padding: '10px 20px', fontSize: '16px', cursor: 'pointer', backgroundColor: '#007bff', color: '#fff', border: 'none', borderRadius: '5px' }}
+        >
+          {compareWithTarget ? 'Disable Compare with Target' : 'Enable Compare with Target'}
+        </button>
+      </div>
+      <DataTable
+        title="LCH Notional | Summary Table"
+        columns={columns}
+        data={tableData}
+        pagination
+        highlightOnHover
+        pointerOnHover
+        selectableRows
+        onSelectedRowsChange={({ selectedRows }) => {
+          if (selectedRows.length > 0) {
+            const start = new Date(selectedRows[0].Date);
+            const end = new Date(selectedRows[selectedRows.length - 1].Date);
+            setStartDate(start);
+            setEndDate(end);
+          }
+        }}
+      />
     </div>
   );
 };
 
-const generateContinuousData = (startDate, numDays) => {
-  const continuousData = [];
-  const parseDate = d3.timeParse("%Y-%m-%d %H:%M");
-  const formatDate = d3.timeFormat("%Y-%m-%d %H:%M");
+export default PlotlyGraph;
 
-  let previousValues = {
-    Target: Math.random() * 150 + 50,
-    AUD: Math.random() * 100,
-    EUR: Math.random() * 100,
-    GBP: Math.random() * 100,
-    JPY: Math.random() * 100,
-    USD: Math.random() * 100,
-    Total: Math.random() * 500 + 200
-  };
-
-  for (let i = 0; i < numDays * 24; i++) { // Generating hourly data
-    const date = new Date(startDate);
-    date.setHours(date.getHours() + i);
-
-    previousValues = {
-      Target: previousValues.Target + (Math.random() * 2 - 1), // Reduced range for smoother lines
-      AUD: previousValues.AUD + (Math.random() * 2 - 1),       // Reduced range for smoother lines
-      EUR: previousValues.EUR + (Math.random() * 2 - 1),       // Reduced range for smoother lines
-      GBP: previousValues.GBP + (Math.random() * 2 - 1),       // Reduced range for smoother lines
-      JPY: previousValues.JPY + (Math.random() * 2 - 1),       // Reduced range for smoother lines
-      USD: previousValues.USD + (Math.random() * 2 - 1),       // Reduced range for smoother lines
-      Total: previousValues.Total + (Math.random() * 10 - 5)   // Reduced range for smoother lines
-    };
-
-    continuousData.push({
-      Date: formatDate(date),
-      Target: previousValues.Target,
-      AUD: previousValues.AUD,
-      EUR: previousValues.EUR,
-      GBP: previousValues.GBP,
-      JPY: previousValues.JPY,
-      USD: previousValues.USD,
-      Total: previousValues.Total
-    });
-  }
-
-  return continuousData;
-};
-
-export default LCHNotionalGraph;
