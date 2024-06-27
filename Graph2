@@ -1,0 +1,307 @@
+import React, { useState, useEffect } from 'react';
+import Highcharts from 'highcharts';
+import HighchartsReact from 'highcharts-react-official';
+import DataTable from 'react-data-table-component';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
+import { generateContinuousData } from '../utils/dataGenerator';
+
+const HighchartsGraph = () => {
+  const [showSpikeLines, setShowSpikeLines] = useState(false);
+  const [compareWithTarget, setCompareWithTarget] = useState(false);
+  const [selectedCurrencies, setSelectedCurrencies] = useState(['AUD']);
+  const [compareDataOnHover, setCompareDataOnHover] = useState(false);
+  const [summary, setSummary] = useState('');
+  const [startDate, setStartDate] = useState(new Date('2023-01-01'));
+  const [endDate, setEndDate] = useState(new Date('2023-01-30'));
+
+  const mockData = generateContinuousData('2023-01-01', 30); // 30 days of data
+
+  const data = [
+    {
+      name: 'Target',
+      data: mockData.map(d => [new Date(d.Date).getTime(), d.Target]),
+      color: 'blue',
+    },
+    {
+      name: 'AUD',
+      data: mockData.map(d => [new Date(d.Date).getTime(), d.AUD]),
+      color: 'orange',
+    },
+    {
+      name: 'EUR',
+      data: mockData.map(d => [new Date(d.Date).getTime(), d.EUR]),
+      color: 'green',
+    },
+    {
+      name: 'GBP',
+      data: mockData.map(d => [new Date(d.Date).getTime(), d.GBP]),
+      color: 'red',
+    },
+    {
+      name: 'JPY',
+      data: mockData.map(d => [new Date(d.Date).getTime(), d.JPY]),
+      color: 'purple',
+    },
+    {
+      name: 'USD',
+      data: mockData.map(d => [new Date(d.Date).getTime(), d.USD]),
+      color: 'brown',
+    }
+  ];
+
+  const calculateTotal = () => {
+    return mockData.map(d => {
+      return [new Date(d.Date).getTime(), selectedCurrencies.reduce((acc, curr) => acc + d[curr], 0)];
+    });
+  };
+
+  const totalValues = calculateTotal();
+
+  const shadeData = {
+    name: 'Difference (Total - Target)',
+    data: totalValues.map((point, index) => [point[0], point[1] - mockData[index].Target]),
+    type: 'area',
+    color: 'rgba(0, 100, 80, 0.2)',
+    enableMouseTracking: false,
+    zIndex: -1,
+  };
+
+  const totalLine = {
+    name: 'Total',
+    data: totalValues,
+    color: 'black',
+  };
+
+  const handleCurrencyChange = (e) => {
+    const options = e.target.options;
+    const selected = [];
+    for (let i = 0; i < options.length; i++) {
+      if (options[i].selected) {
+        selected.push(options[i].value);
+      }
+    }
+    setSelectedCurrencies(selected);
+  };
+
+  const getData = () => {
+    const compareData = [
+      totalLine,
+      ...data.filter(d => selectedCurrencies.includes(d.name)),
+      {
+        name: 'Target',
+        data: mockData.map(d => [new Date(d.Date).getTime(), d.Target]),
+        color: 'blue',
+      },
+    ];
+    return compareWithTarget ? [...compareData, shadeData] : compareData;
+  };
+
+  const handleHover = (e) => {
+    const points = e.target.series.chart.hoverPoints;
+    let targetValue = null;
+    let totalValue = null;
+
+    points.forEach(point => {
+      if (point.series.name === 'Target') {
+        targetValue = point.y;
+      }
+      if (point.series.name === 'Total') {
+        totalValue = point.y;
+      }
+    });
+
+    if (targetValue !== null && totalValue !== null) {
+      const difference = (totalValue - targetValue).toFixed(2);
+      const totalBreakdown = selectedCurrencies.map(currency => {
+        const point = points.find(p => p.series.name === currency);
+        return `${currency}: ${point.y.toFixed(2)}`;
+      }).join('<br>');
+
+      let summaryHTML = `<strong>Total: ${totalValue.toFixed(2)}</strong><br>`;
+      summaryHTML += `<strong>Target: ${targetValue.toFixed(2)}</strong><br>`;
+      summaryHTML += `Difference: ${difference}<br><br>`;
+      summaryHTML += `<strong>Breakdown of Selected Currencies:</strong><br>${totalBreakdown}`;
+      setSummary(summaryHTML);
+      document.getElementById('difference-label').innerHTML = `Difference: ${difference}`;
+    }
+  };
+
+  const columns = [
+    { name: 'Date', selector: row => row.Date, sortable: true },
+    { name: 'Target', selector: row => row.Target, sortable: true },
+    { name: 'AUD', selector: row => row.AUD, sortable: true },
+    { name: 'EUR', selector: row => row.EUR, sortable: true },
+    { name: 'GBP', selector: row => row.GBP, sortable: true },
+    { name: 'JPY', selector: row => row.JPY, sortable: true },
+    { name: 'USD', selector: row => row.USD, sortable: true },
+    { name: 'Total', selector: row => row.Total, sortable: true },
+  ];
+
+  const tableData = mockData.map(d => ({
+    Date: d.Date,
+    Target: d.Target.toFixed(2),
+    AUD: d.AUD.toFixed(2),
+    EUR: d.EUR.toFixed(2),
+    GBP: d.GBP.toFixed(2),
+    JPY: d.JPY.toFixed(2),
+    USD: d.USD.toFixed(2),
+    Total: totalValues[mockData.indexOf(d)][1].toFixed(2)
+  }));
+
+  const handleDateRangeChange = (ranges) => {
+    setStartDate(ranges[0]);
+    setEndDate(ranges[1]);
+  };
+
+  const options = {
+    chart: {
+      type: 'line',
+      zoomType: 'x',
+    },
+    title: {
+      text: 'Currency Exchange Rates',
+    },
+    xAxis: {
+      type: 'datetime',
+      title: {
+        text: 'Date',
+      },
+      min: startDate.getTime(),
+      max: endDate.getTime(),
+    },
+    yAxis: {
+      title: {
+        text: 'Value',
+      },
+    },
+    tooltip: {
+      shared: true,
+      crosshairs: true,
+      formatter: function () {
+        const points = this.points;
+        let targetValue = null;
+        let totalValue = null;
+
+        points.forEach(point => {
+          if (point.series.name === 'Target') {
+            targetValue = point.y;
+          }
+          if (point.series.name === 'Total') {
+            totalValue = point.y;
+          }
+        });
+
+        if (targetValue !== null && totalValue !== null) {
+          const difference = (totalValue - targetValue).toFixed(2);
+          const totalBreakdown = selectedCurrencies.map(currency => {
+            const point = points.find(p => p.series.name === currency);
+            return `${currency}: ${point.y.toFixed(2)}`;
+          }).join('<br>');
+
+          let summaryHTML = `<strong>Total: ${totalValue.toFixed(2)}</strong><br>`;
+          summaryHTML += `<strong>Target: ${targetValue.toFixed(2)}</strong><br>`;
+          summaryHTML += `Difference: ${difference}<br><br>`;
+          summaryHTML += `<strong>Breakdown of Selected Currencies:</strong><br>${totalBreakdown}`;
+          setSummary(summaryHTML);
+          document.getElementById('difference-label').innerHTML = `Difference: ${difference}`;
+        }
+
+        return points.reduce((s, point) => {
+          return s + `<br/><span style="color:${point.series.color}">${point.series.name}</span>: ${point.y}`;
+        }, `<b>${Highcharts.dateFormat('%A, %b %e, %Y', this.x)}</b>`);
+      },
+    },
+    series: getData(),
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
+        <div>
+          <label>Select Currencies to Compare with Target: </label>
+          <select
+            multiple
+            name="selectedCurrencies"
+            onChange={handleCurrencyChange}
+            value={selectedCurrencies}
+            style={{ height: '100px', width: '200px', padding: '5px', fontSize: '14px' }}
+          >
+            <option value="AUD">AUD</option>
+            <option value="EUR">EUR</option>
+            <option value="GBP">GBP</option>
+            <option value="JPY">JPY</option>
+                        <option value="USD">USD</option>
+          </select>
+        </div>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
+        <div>
+          <label>Select Date Range: </label>
+          <DatePicker
+            selected={startDate}
+            onChange={date => setStartDate(date)}
+            selectsStart
+            startDate={startDate}
+            endDate={endDate}
+          />
+          <DatePicker
+            selected={endDate}
+            onChange={date => setEndDate(date)}
+            selectsEnd
+            startDate={startDate}
+            endDate={endDate}
+            minDate={startDate}
+          />
+        </div>
+      </div>
+      <HighchartsReact
+        highcharts={Highcharts}
+        options={options}
+        callback={chart => {
+          chart.series.forEach(series => {
+            series.points.forEach(point => {
+              point.on('mouseover', handleHover);
+            });
+          });
+        }}
+      />
+      <div id="difference-label" style={{ textAlign: 'center', marginTop: '10px' }}></div>
+      {compareWithTarget && (
+        <div style={{ border: '1px solid black', padding: '10px', marginTop: '20px', backgroundColor: '#f9f9f9' }}>
+          <h3>Summary</h3>
+          <div dangerouslySetInnerHTML={{ __html: summary }} />
+        </div>
+      )}
+      <div style={{ display: 'flex', justifyContent: 'center', marginTop: '20px' }}>
+        <button
+          onClick={() => setCompareWithTarget(!compareWithTarget)}
+          style={{ padding: '10px 20px', fontSize: '16px', cursor: 'pointer', backgroundColor: '#007bff', color: '#fff', border: 'none', borderRadius: '5px' }}
+        >
+          {compareWithTarget ? 'Disable Compare with Target' : 'Enable Compare with Target'}
+        </button>
+      </div>
+      <DataTable
+        title="LCH Notional | Summary Table"
+        columns={columns}
+        data={tableData}
+        pagination
+        highlightOnHover
+        pointerOnHover
+        selectableRows
+        onSelectedRowsChange={({ selectedRows }) => {
+          if (selectedRows.length > 0) {
+            const start = new Date(selectedRows[0].Date);
+            const end = new Date(selectedRows[selectedRows.length - 1].Date);
+            setStartDate(start);
+            setEndDate(end);
+          }
+        }}
+      />
+    </div>
+  );
+};
+
+export default HighchartsGraph;
+
+//npm install highcharts highcharts-react-official react-data-table-component react-datepicker
