@@ -1,0 +1,114 @@
+import React, { useState } from 'react';
+import DataTable from 'react-data-table-component';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
+import { generateContinuousData } from '../utils/dataGenerator';
+
+const PlotlyGraph = () => {
+  const [selectedCurrencies, setSelectedCurrencies] = useState(['AUD']);
+  const [startDate, setStartDate] = useState(new Date('2023-01-01'));
+  const [endDate, setEndDate] = useState(new Date('2023-01-30'));
+
+  const mockData = generateContinuousData('2023-01-01', 30); // 30 days of data
+
+  const calculateTotal = () => {
+    return mockData.map(d => {
+      return selectedCurrencies.reduce((acc, curr) => acc + d[curr], 0);
+    });
+  };
+
+  const totalValues = calculateTotal();
+
+  const columns = [
+    { name: 'Date', selector: row => row.Date, sortable: true },
+    { name: 'Target', selector: row => row.Target, sortable: true },
+    { name: 'AUD', selector: row => row.AUD, sortable: true },
+    { name: 'EUR', selector: row => row.EUR, sortable: true },
+    { name: 'GBP', selector: row => row.GBP, sortable: true },
+    { name: 'JPY', selector: row => row.JPY, sortable: true },
+    { name: 'USD', selector: row => row.USD, sortable: true },
+    { name: 'Total', selector: row => row.Total, sortable: true },
+  ];
+
+  const tableData = mockData.map(d => ({
+    Date: d.Date,
+    Target: d.Target.toFixed(2),
+    AUD: d.AUD.toFixed(2),
+    EUR: d.EUR.toFixed(2),
+    GBP: d.GBP.toFixed(2),
+    JPY: d.JPY.toFixed(2),
+    USD: d.USD.toFixed(2),
+    Total: totalValues[mockData.indexOf(d)].toFixed(2)
+  }));
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
+        <div>
+          <label>Select Currencies to Include in Total: </label>
+          <select
+            multiple
+            name="selectedCurrencies"
+            onChange={e => {
+              const options = e.target.options;
+              const selected = [];
+              for (let i = 0; i < options.length; i++) {
+                if (options[i].selected) {
+                  selected.push(options[i].value);
+                }
+              }
+              setSelectedCurrencies(selected);
+            }}
+            value={selectedCurrencies}
+            style={{ height: '100px', width: '200px', padding: '5px', fontSize: '14px' }}
+          >
+            <option value="AUD">AUD</option>
+            <option value="EUR">EUR</option>
+            <option value="GBP">GBP</option>
+            <option value="JPY">JPY</option>
+            <option value="USD">USD</option>
+          </select>
+        </div>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
+        <div>
+          <label>Select Date Range: </label>
+          <DatePicker
+            selected={startDate}
+            onChange={date => setStartDate(date)}
+            selectsStart
+            startDate={startDate}
+            endDate={endDate}
+          />
+          <DatePicker
+            selected={endDate}
+            onChange={date => setEndDate(date)}
+            selectsEnd
+            startDate={startDate}
+            endDate={endDate}
+            minDate={startDate}
+          />
+        </div>
+      </div>
+      <DataTable
+        title="LCH Notional | Summary Table"
+        columns={columns}
+        data={tableData}
+        pagination
+        highlightOnHover
+        pointerOnHover
+        selectableRows
+        onSelectedRowsChange={({ selectedRows }) => {
+          if (selectedRows.length > 0) {
+            const start = new Date(selectedRows[0].Date);
+            const end = new Date(selectedRows[selectedRows.length - 1].Date);
+            setStartDate(start);
+            setEndDate(end);
+          }
+        }}
+      />
+    </div>
+  );
+};
+
+export default PlotlyGraph;
