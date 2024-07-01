@@ -1,0 +1,26 @@
+# Example arrays
+array1 = [1, 2, 3]
+array2 = ['a', 'b', 'c']
+array3 = [True, False, True]
+array4 = [0.1, 0.2, 0.3]
+array5 = ['x', 'y', 'z']
+array6 = [100, 200, 300]
+array7 = [10, 20, 30]
+
+# Combine arrays and create array of objects
+combined_array = [
+    {
+        'value1': v1,
+        'value2': v2,
+        'value3': v3,
+        'value4': v4,
+        'value5': v5,
+        'value6': v6,
+        'value7': v7
+    }
+    for v1, v2, v3, v4, v5, v6, v7 in zip(array1, array2, array3, array4, array5, array6, array7)
+]
+
+# Print the result
+for obj in combined_array:
+    print(obj)
